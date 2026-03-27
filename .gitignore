@@ -1,0 +1,45 @@
+# C/C++ build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.out
+*.app
+
+# Android NDK
+obj/
+libs/
+.cxx/
+
+# Linux Kernel Module build artifacts
+*.ko
+*.mod.c
+*.mod.o
+*.mod
+*.symvers
+*.order
+.tmp_versions/
+.*.cmd
+modules.order
+Module.symvers
+*.o.ur-safe
+
+# Python (test script)
+__pycache__/
+*.pyc
+*.pyo
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE/OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

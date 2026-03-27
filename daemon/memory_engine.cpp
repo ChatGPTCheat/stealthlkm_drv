@@ -181,3 +181,34 @@ struct StealthPtRegs MemoryEngine::GetDebugRegs() const {
     }
     return shm_->debug_regs;
 }
+
+bool MemoryEngine::CheckDebugEvent(struct StealthPtRegs* out_regs) {
+    if (!is_valid_ || !shm_) return false;
+    
+    // Non-blocking check for ATOMIC event
+    if (__atomic_load_n(&shm_->debug_event_active, __ATOMIC_ACQUIRE) == 1) {
+        if (out_regs) {
+            *out_regs = shm_->debug_regs;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool MemoryEngine::ResumeHWBP(const struct StealthPtRegs& modified_regs) {
+    if (!is_valid_ || !shm_) return false;
+
+    // Apply the user's tampered registers
+    shm_->debug_regs = modified_regs;
+    
+    // Issue release and wake_up
+    __atomic_store_n(&shm_->debug_resume_flag, 1, __ATOMIC_RELEASE);
+    ioctl(fd_, STEALTH_IOCTL_RESUME_HWBP, 0);
+
+    // Block exactly until the kernel removes the active flag
+    while (__atomic_load_n(&shm_->debug_event_active, __ATOMIC_ACQUIRE) == 1) {
+        asm volatile("yield");
+    }
+    
+    return true;
+}

@@ -34,10 +34,20 @@ MAKE_ARGS := \
 	OBJDUMP=$(LLVM_BIN)llvm-objdump \
 	STRIP=$(LLVM_BIN)llvm-strip
 
-.PHONY: all clean
+CPP_COMPILER := $(LLVM_BIN)aarch64-linux-android33-clang++
+CPP_FLAGS := -std=c++17 -O3 -Wall -pthread -I. -static-libstdc++
 
-all:
+all: modules daemon tester
+
+modules:
 	$(MAKE) $(MAKE_ARGS) -C $(KDIR) M=$(PWD) modules
+
+daemon:
+	$(CPP_COMPILER) $(CPP_FLAGS) -o stealth_daemon memory_engine.cpp map_parser.cpp stealth_daemon.cpp
+
+tester:
+	$(CPP_COMPILER) $(CPP_FLAGS) -o engine_tester memory_engine.cpp main.cpp
 
 clean:
 	$(MAKE) $(MAKE_ARGS) -C $(KDIR) M=$(PWD) clean
+	rm -f engine_tester stealth_daemon

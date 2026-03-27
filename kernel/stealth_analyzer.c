@@ -180,61 +180,57 @@ static int turbo_worker_thread(void *data) {
 				} else { shm->cmd_paddr_out = 0; }
 			}
 
-			smp_store_release(&shm->kernel_seq, cur_seq);
-			processed_command = true;
-		}
+			if (shm->batch_active && mm_in_use) {
+				uint32_t count = shm->batch_count;
+				uint32_t i;
+				if (count > MAX_BATCH_ENTRIES) count = MAX_BATCH_ENTRIES;
 
-		if (shm->batch_active && mm_in_use) {
-			uint32_t count = shm->batch_count;
-			uint32_t i;
-			if (count > MAX_BATCH_ENTRIES) count = MAX_BATCH_ENTRIES;
-
-			for (i = 0; i < count; i++) {
-				uint64_t va = shm->batch[i].vaddr;
-				uint64_t untagged_va, pa;
-				if (!va) continue;
-				
-				untagged_va = va & 0x00FFFFFFFFFFFFFFULL;
-				pa = hw_translate_at_s1e0r(untagged_va);
-
-				if (pa) {
-					uint32_t read_sz = shm->batch[i].size;
-					uint64_t val1 = 0, val2 = 0;
-					bool success = true;
-					uint64_t kernel_va;
-
-					if (read_sz > 16) read_sz = 16;
-					kernel_va = (uint64_t)__va(pa);
+				for (i = 0; i < count; i++) {
+					uint64_t va = shm->batch[i].vaddr;
+					uint64_t untagged_va, pa;
+					if (!va) continue;
 					
-					/* MTE Bypass */
-					asm volatile(".inst 0xd503419f" ::: "memory"); /* msr tco, #1 */
-					val1 = *(volatile uint64_t *)kernel_va;
-					
-					if (read_sz > 8) {
-						uint64_t pa2 = hw_translate_at_s1e0r(untagged_va + 8);
-						if (pa2) val2 = *(volatile uint64_t *)__va(pa2);
-						else success = false;
-					}
-					asm volatile(".inst 0xd503409f" ::: "memory"); /* msr tco, #0 */
-					
-					if (success) {
-						shm->batch[i].status = 1;
-						*(uint64_t*)(shm->batch[i].data) = val1;
-						if (read_sz > 8) *(uint64_t*)(shm->batch[i].data + 8) = val2;
+					untagged_va = va & 0x00FFFFFFFFFFFFFFULL;
+					pa = hw_translate_at_s1e0r(untagged_va);
+
+					if (pa) {
+						uint32_t read_sz = shm->batch[i].size;
+						uint64_t val1 = 0, val2 = 0;
+						bool success = true;
+						uint64_t kernel_va;
+
+						if (read_sz > 16) read_sz = 16;
+						kernel_va = (uint64_t)__va(pa);
+						
+						/* MTE Bypass */
+						asm volatile(".inst 0xd503419f" ::: "memory"); /* msr tco, #1 */
+						val1 = *(volatile uint64_t *)kernel_va;
+						
+						if (read_sz > 8) {
+							uint64_t pa2 = hw_translate_at_s1e0r(untagged_va + 8);
+							if (pa2) val2 = *(volatile uint64_t *)__va(pa2);
+							else success = false;
+						}
+						asm volatile(".inst 0xd503409f" ::: "memory"); /* msr tco, #0 */
+						
+						if (success) {
+							shm->batch[i].status = 1;
+							*(uint64_t*)(shm->batch[i].data) = val1;
+							if (read_sz > 8) *(uint64_t*)(shm->batch[i].data + 8) = val2;
+						} else {
+							shm->batch[i].status = 0;
+						}
 					} else {
 						shm->batch[i].status = 0;
 					}
-				} else {
-					shm->batch[i].status = 0;
 				}
-			}
-			
-			shm->turbo_counter++;
+				
+				if (shm->batch_delay_ns > 0) ndelay(shm->batch_delay_ns);
+			} 
+
+			smp_store_release(&shm->kernel_seq, cur_seq);
 			processed_command = true;
-			
-			if (shm->batch_delay_ns > 0) ndelay(shm->batch_delay_ns);
-			else cond_resched();
-		} 
+		}
 		
 		if (!processed_command) {
 			int spin;

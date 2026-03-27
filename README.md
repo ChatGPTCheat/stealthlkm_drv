@@ -1,45 +1,52 @@
-# Stealth LKM Memory Engine (Android GKI)
+# Stealth AArch64 Kernel Memory Analysis Framework 🕵️‍♂️🏎️
 
-A high-performance, stealthy Ring-0 Memory Analysis & Debugging framework for Android AArch64 (GKI 6.1). Designed for dynamic game analysis, bypassing modern Anti-Cheats (e.g. Tencent, Epic Games, XignCode) without using `ptrace`, `/proc/pid/mem`, or `sys_process_vm_readv`.
+A high-performance, Ring-0 memory mapping and real-time debugging framework for Android GKI 6.1 (AArch64). Built to entirely bypass heavy Userspace Anti-Cheat mechanisms by relying on in-kernel hardware breakpoint control and physical-to-virtual memory mapping.
 
-## Features
-* **Zero-Copy IPC**: Bridges userspace and kernel via a shared memory buffer (`mmap`), offering sub-microsecond memory reading speeds (~170ns per read) without any system calls.
-* **Invisible VFS Hooking**: Injects a proxy `file_operations` hook dynamically into `/dev/ashmem` via `Kretprobe`, leaving standard sysfs and `kallsyms` un-tampered.
-* **MTE & PAC Bypasses**: Disables ARM Memory Tagging Extension checking temporarily (`msr tco, #1`) allowing safe reads on modern Pixel and Snapdragon 8 Gen 2+ devices.
-* **Hardware Breakpoints (HWBP) Freezing**: Features an advanced `task_work` + `wait_queue` freezing mechanism that traps target threads (e.g. RenderThread) safely inside EL1 without triggering Kernel Watchdogs.
-* **Early Return PC-Patching**: Effortlessly skip function execution (Anti-Cheat initializations, SSL encryptions) manually from a C++ client by overwriting `X30` (Link Register) into `PC`.
+## Architecture
 
-## Project Structure
-- `stealth_analyzer.c`: The core Rootkit/LKM.
-- `arch_arm64.h`: AArch64 specific assembly inline primitives.
-- `shared_buffer.h`: Shared C structures and IOCTL macros for bidirectional communication.
-- `memory_engine.h/cpp`: The C++ wrapper class abstracting IPC, Batched Memory reading and HWBP Debugging API.
-- `main.cpp`: A fully functional example of injecting into an Android game, setting HW breakpoints, and hot-patching CPU registers.
+The system is separated into three highly optimized tiers that communicate with complete synchrony and near-zero latency:
 
-## Build Requirements
-- Android NDK (Clang >= 14)
-- AArch64 Linux Toolchain
-- GKI 6.1 Kernel Source headers (for building the module)
+### 1. The Kernel Module (`kernel/`)
+- Utilizes `Kretprobes` on standard `ashmem_open` to inject a suite of custom `file_operations` into `/dev/ashmem` invisibly.
+- Instantiates a dedicated kernel thread (`poly_turbo`) polling a shared memory buffer `ShmData` ring buffer.
+- Performs hardware-level page table translation (`hw_translate_at_s1e0r`) directly bypassing standard `copy_from_user` overhead in the kernel.
+- Achieves incredible **~170ns read speeds** for dynamic memory batches.
+- Harnesses `register_user_hw_breakpoint` coupled with `task_work` events to secretly freeze game threads upon hardware watchpoint triggers.
 
-## Usage
-1. Build the kernel module:
-   ```bash
-   make ARCH=arm64 LLVM=1
-   ```
-2. Build the C++ client:
-   ```bash
-   clang++ -std=c++17 -O3 -Wall -pthread -I. -o engine_tester memory_engine.cpp main.cpp
-   ```
-3. Push to an adb-rooted device:
-   ```bash
-   adb push stealth_analyzer.ko /data/local/tmp/
-   adb push engine_tester /data/local/tmp/
-   ```
-4. Run:
-   ```bash
-   insmod /data/local/tmp/stealth_analyzer.ko
-   /data/local/tmp/engine_tester self
-   ```
+### 2. The Userspace Daemon (`daemon/`)
+- A C++ background server opening a TCP Socket bridging the Ring-0 engine with any external tooling.
+- Uses `mmap` zero-copy IPC structures to push thousands of batch structures concurrently from `stealth_daemon.cpp` to the kernel driver.
+- Parses process mappings accurately via direct `map_parser.cpp` resolving ELF base addresses instantly.
+
+### 3. The Rust GUI & GDB Server (`gui/`)
+- A stunning Rust `egui`-based control panel.
+- Interprets dynamic raw memory streams live, formats Hex streams, extracts Pointers and handles `f32` vectors.
+- Includes a live hardware `Capstone` AArch64 Disassembly view.
+- Embeds a powerful **GDB Remote Serial Protocol (RSP)** server proxy (`23946`) tricking standard **IDA Pro** into acting as a pure dynamic remote debugger. Complete integration with native ARM64 IDA templates, displaying realtime PC and registers without needing ptrace!
+
+## Building
+
+### Daemon
+Compile using the Android NDK `aarch64-linux-android-clang++`:
+```bash
+cd daemon
+# Assuming NDK variables are set:
+make
+```
+
+### Kernel Module
+Use the standard GKI compilation tree:
+```bash
+cd kernel
+make all
+```
+
+### GUI Analyzer
+Ensure a standard Rust toolchain is installed:
+```bash
+cd gui
+cargo run --release
+```
 
 ## Disclaimer
-This project is strictly for Educational & Kernel Security Research purposes. It demonstrates severe vulnerabilities in Android's EL1/EL0 boundary controls and `perf_event` debugging. The author assumes no responsibility for abusive applications of this framework.
+Created strictly for educational and performance analysis research.

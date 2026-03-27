@@ -51,6 +51,10 @@ public:
         return true;
     }
 
+    // Non-blocking version for TCP daemon
+    bool CheckDebugEvent(struct StealthPtRegs* out_regs);
+    bool ResumeHWBP(const struct StealthPtRegs& modified_regs);
+
 private:
     int fd_;
     int target_pid_;
