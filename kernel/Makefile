@@ -10,7 +10,12 @@
 #   make clean    — remove build artifacts
 #
 
-obj-m := stealth_analyzer.o
+obj-m := stealthlkm.o
+stealthlkm-objs := stealth_analyzer.o stealth_simd_core.o stealth_spe.o
+
+# Force the compiler to enable NEON/SIMD intrinsics for the core logic
+CFLAGS_stealth_simd_core.o := -march=armv8-a+simd -O3 -fno-tree-vectorize -isystem /opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/21/include
+CFLAGS_REMOVE_stealth_simd_core.o := -mgeneral-regs-only
 
 # Path to Android GKI 6.1 kernel source tree
 KDIR := /home/dev/projectMINT/android-kernels/6.1/
@@ -20,8 +25,6 @@ LLVM_BIN := /opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/
 
 ARCH := arm64
 
-# Use LLVM=1 so the kernel build system picks clang, ld.lld, llvm-ar, etc.
-# LLVM_IAS=1 uses the integrated assembler (clang -c) instead of GNU as.
 MAKE_ARGS := \
 	ARCH=$(ARCH) \
 	LLVM=1 \
@@ -34,20 +37,10 @@ MAKE_ARGS := \
 	OBJDUMP=$(LLVM_BIN)llvm-objdump \
 	STRIP=$(LLVM_BIN)llvm-strip
 
-CPP_COMPILER := $(LLVM_BIN)aarch64-linux-android33-clang++
-CPP_FLAGS := -std=c++17 -O3 -Wall -pthread -I. -static-libstdc++
-
-all: modules daemon tester
+all: modules
 
 modules:
 	$(MAKE) $(MAKE_ARGS) -C $(KDIR) M=$(PWD) modules
 
-daemon:
-	$(CPP_COMPILER) $(CPP_FLAGS) -o stealth_daemon memory_engine.cpp map_parser.cpp stealth_daemon.cpp
-
-tester:
-	$(CPP_COMPILER) $(CPP_FLAGS) -o engine_tester memory_engine.cpp main.cpp
-
 clean:
 	$(MAKE) $(MAKE_ARGS) -C $(KDIR) M=$(PWD) clean
-	rm -f engine_tester stealth_daemon

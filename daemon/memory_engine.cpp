@@ -209,6 +209,58 @@ bool MemoryEngine::ResumeHWBP(const struct StealthPtRegs& modified_regs) {
     while (__atomic_load_n(&shm_->debug_event_active, __ATOMIC_ACQUIRE) == 1) {
         asm volatile("yield");
     }
-    
+
     return true;
+}
+
+// ===== SPE Hardware Profiling (Zero Detection HWBP) =====
+
+void MemoryEngine::SetSPEWatchpoint(uint64_t vaddr, uint32_t size) {
+    if (!is_valid_ || !shm_) return;
+
+    printf("[SPE] Setting hardware watchpoint at 0x%lx (size: %u)\n",
+           (unsigned long)vaddr, size);
+
+    shm_->spe_hit_count = 0;
+    memset((void*)shm_->spe_hits, 0, sizeof(shm_->spe_hits));
+
+    shm_->cmd_vaddr = vaddr;
+    shm_->cmd_len = size;
+    __atomic_store_n(&shm_->cmd_type, 8, __ATOMIC_RELEASE);
+
+    while (__atomic_load_n(&shm_->cmd_type, __ATOMIC_ACQUIRE) != 0) {
+        usleep(100);
+    }
+    printf("[SPE] Watchpoint activated successfully.\n");
+}
+
+void MemoryEngine::RemoveSPEWatchpoint() {
+    if (!is_valid_ || !shm_) return;
+
+    __atomic_store_n(&shm_->cmd_type, 9, __ATOMIC_RELEASE);
+
+    while (__atomic_load_n(&shm_->cmd_type, __ATOMIC_ACQUIRE) != 0) {
+        usleep(100);
+    }
+    printf("[SPE] Watchpoint removed.\n");
+}
+
+bool MemoryEngine::PollSPEEvents() {
+    if (!is_valid_ || !shm_) return false;
+
+    uint32_t count = __atomic_load_n(&shm_->spe_hit_count, __ATOMIC_ACQUIRE);
+    if (count > 0) {
+        printf("[SPE-ALERT] Intercepted %u memory accesses!\n", count);
+        for (uint32_t i = 0; i < count && i < 10; i++) {
+            printf("  -> Hit %u: VA=0x%lx | PC=0x%lx | Write=%u | Time=%lu\n",
+                   i,
+                   (unsigned long)shm_->spe_hits[i].target_vaddr,
+                   (unsigned long)shm_->spe_hits[i].pc_vaddr,
+                   shm_->spe_hits[i].is_write,
+                   (unsigned long)shm_->spe_hits[i].timestamp);
+        }
+        __atomic_store_n(&shm_->spe_hit_count, 0, __ATOMIC_RELEASE);
+        return true;
+    }
+    return false;
 }

@@ -55,6 +55,11 @@ public:
     bool CheckDebugEvent(struct StealthPtRegs* out_regs);
     bool ResumeHWBP(const struct StealthPtRegs& modified_regs);
 
+    /* SPE Hardware Profiling (Zero Detection HWBP) */
+    void SetSPEWatchpoint(uint64_t vaddr, uint32_t size);
+    void RemoveSPEWatchpoint();
+    bool PollSPEEvents();
+
 private:
     int fd_;
     int target_pid_;

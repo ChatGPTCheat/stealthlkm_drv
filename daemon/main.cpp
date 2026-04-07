@@ -10,6 +10,7 @@
 #include <atomic>
 
 #include "memory_engine.h"
+#include "map_parser.h"
 
 // Simple dummy PID resolver
 int GetPidByName(const std::string& name) {
@@ -76,9 +77,11 @@ int main(int argc, char** argv) {
 
         std::thread dummy_runner([&dummy_tid](){
             dummy_tid = syscall(SYS_gettid);
-            // Ждем пока главный поток не установит брейкпоинт на наш TID
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::cout << "[Thread] TID " << dummy_tid << " ready, sleeping 2s before executing function..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::cout << "[Thread] About to call DummyTriggerFunction..." << std::endl;
             DummyTriggerFunction();
+            std::cout << "[Thread] DummyTriggerFunction returned." << std::endl;
         });
 
         // Ждем запуска потока
@@ -90,45 +93,78 @@ int main(int argc, char** argv) {
         // Важно: в Linux HWBP прикрепляются к конкретному Потоку (task_struct / LWP), а не ко всему PID.
         // Поэтому для теста мы используем TID дочернего потока!
         if (engine.SetHWBP(test_addr, dummy_tid)) {
-            std::cout << "[+] Breakpoint set! Thread will execute it in 500ms..." << std::endl;
-            std::cout << "[*] Engine is spinning and waiting for Kernel NMI..." << std::endl;
-            
-            bool hit = engine.WaitAndProcessDebugEvent([test_addr](struct StealthPtRegs& regs) {
-                std::cout << "\n[!!!] THREAD FROZEN IN KERNEL SPACE [!!!]" << std::endl;
-                std::cout << "      -> Captured PC: 0x" << std::hex << regs.pc << std::dec << std::endl;
-                std::cout << "      -> Captured SP: 0x" << std::hex << regs.sp << std::dec << std::endl;
-                std::cout << "      -> Captured X0: 0x" << std::hex << regs.regs[0] << std::dec << std::endl;
-                
-                regs.regs[0] = 0x1337BEEF; 
-                std::cout << "[*] Modifying X0 to 0x1337BEEF before giving RESUME signal..." << std::endl;
-                
-                // ЭЛЕГАНТНЫЙ ОБХОД НА УРОВНЕ РЕГИСТРОВ (EARLY RETURN)
-                // Так как брейкпоинт стоит на самой первой инструкции функции, если мы сделаем PC+=4,
-                // мы пропустим критический пролог (stp x29,x30), что сломает стек и вызовет Segfault.
-                // Вместо этого мы принудительно выходим из функции без ее выполнения!
-                // Записываем в PC значение регистра X30 (Link Register), куда процессор должен был вернуться.
-                regs.pc = regs.regs[30];
-                
-                // И сбрасываем флаг Single-Step (DBG_SPSR_SS = 1 << 21) внутри PSTATE
-                regs.pstate &= ~(1ULL << 21);
-            });
-            
-            if (hit) {
-                std::cout << "\n[+] Kernel accepted Resume signal. Target thread unfrozen." << std::endl;
-            } else {
-                std::cout << "[-] Failed to capture the breakpoint event." << std::endl;
+            std::cout << "[+] Breakpoint set! Thread will execute it in 2s..." << std::endl;
+            std::cout << "[*] Polling for breakpoint hit (snapshot-only mode)..." << std::endl;
+
+            // Poll for breakpoint hit (non-blocking, snapshot-only)
+            bool hit = false;
+            struct StealthPtRegs captured_regs;
+
+            for (int i = 0; i < 60; i++) { // 60 * 100ms = 6 seconds
+                if (engine.CheckDebugEvent(&captured_regs)) {
+                    hit = true;
+                    std::cout << "\n[!!!] BREAKPOINT HIT (SNAPSHOT CAPTURED) [!!!]" << std::endl;
+                    std::cout << "      -> Captured PC: 0x" << std::hex << captured_regs.pc << std::dec << std::endl;
+                    std::cout << "      -> Captured SP: 0x" << std::hex << captured_regs.sp << std::dec << std::endl;
+                    std::cout << "      -> Captured X0: 0x" << std::hex << captured_regs.regs[0] << std::dec << std::endl;
+                    std::cout << "[*] Note: Thread was NOT frozen (snapshot-only mode for NMI safety)" << std::endl;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
-            // Дадим дочернему потоку время штатно проснуться, выполнить Hardware Single Step
-            // и завершить инструкцию до того, как мы жестко удалим HWBP структуру из ядра!
+            if (!hit) {
+                std::cout << "[-] Breakpoint did not trigger within 6 second timeout." << std::endl;
+            }
+
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             engine.RemoveHWBP();
+        } else {
+            std::cout << "[-] Failed to set HWBP!" << std::endl;
         }
         dummy_runner.join();
         std::cout << "[*] Dummy thread finished successfully without crashing!" << std::endl;
     } else {
         std::cout << "\n[*] Connected to Game. Engine Loop starting..." << std::endl;
-        // In the future you would read libs and set breakpoints here
+
+        // ===== Find libUE4.so base =====
+        uint64_t ue4_size = 0;
+        uint64_t ue4_base = MemoryMapParser::GetModuleBase(pid, "libUE4.so", &ue4_size);
+        if (ue4_base > 0) {
+            std::cout << "[+] libUE4.so base: 0x" << std::hex << ue4_base
+                      << " | size: 0x" << ue4_size << std::dec
+                      << " (" << (ue4_size / 1024 / 1024) << " MB)" << std::endl;
+        } else {
+            std::cout << "[-] libUE4.so not found in /proc/" << pid << "/maps" << std::endl;
+        }
+
+        // ===== SPE Hardware Profiling Test =====
+        std::cout << "\n--- SPE Hardware Profiling Test ---" << std::endl;
+
+        uint64_t spe_addr = ue4_base; // default to libUE4.so base
+        if (spe_addr == 0) {
+            // If no libUE4.so, use a generic address from the process
+            std::cout << "[*] No libUE4.so found, using generic test address..." << std::endl;
+            spe_addr = 0x1000; // Just a placeholder for testing
+        }
+
+        std::cout << "[*] Monitoring address: 0x" << std::hex << spe_addr << std::dec << std::endl;
+
+        engine.SetSPEWatchpoint(spe_addr, 256);
+
+        std::cout << "[*] SPE is now monitoring 0x" << std::hex << spe_addr << std::dec << std::endl;
+        std::cout << "[*] Polling for memory access events... (Auto-exit after 10 seconds)" << std::endl;
+
+        int poll_count = 0;
+        while (poll_count < 200) { // 200 * 50ms = 10 seconds
+            if (engine.PollSPEEvents()) {
+                std::cout << "[*] Events consumed. Continuing to monitor..." << std::endl;
+            }
+            usleep(50000); // 50ms poll interval
+            poll_count++;
+        }
+
+        engine.RemoveSPEWatchpoint();
     }
 
     std::cout << "[*] Clean Exit." << std::endl;
