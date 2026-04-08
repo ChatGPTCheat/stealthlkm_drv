@@ -1,0 +1,3 @@
+## 2024-05-24 - Expensive Initialization in Render Loops
+**Learning:** Initializing computationally expensive objects like `Capstone` within frequent UI event handlers (like memory read responses in `eframe`) causes unnecessary overhead. Even though `Capstone` doesn't implement `Send`, it can safely live inside the main `App` struct because `eframe::App` instances are bound to the main UI thread.
+**Action:** Cache non-`Send` expensive resources in the main application struct (e.g., `StealthApp`) rather than creating them per-event, to prevent CPU spiking on recurring operations like disassembly.
