@@ -1,0 +1,3 @@
+## 2025-02-23 - [GUI Architecture] Cache computationally expensive operations inside main UI struct
+**Learning:** Re-initializing heavy objects like the `Capstone` disassembly engine on every network tick/render loop completely destroys performance. Since UI elements inside `eframe::App` instances run safely on the main thread, it is perfectly valid to cache types that do not implement `Send` directly inside the app state struct (`StealthApp`).
+**Action:** When working on Rust GUI rendering (like `egui`), always cache expensive parsing, compiling, or decoding engines in the struct state inside `App::new()` instead of creating them on-the-fly during render or event processing loops.
