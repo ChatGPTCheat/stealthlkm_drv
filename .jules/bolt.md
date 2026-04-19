@@ -1,0 +1,3 @@
+## 2024-05-24 - Capstone Initialization Overhead
+**Learning:** In the Rust `egui` GUI component, instantiating `Capstone::new().arm64()...build()` on every network memory read cycle creates massive computational overhead. Although `Capstone` does not implement `Send` (meaning it cannot be sent across threads safely), it *can* be safely cached inside the main `eframe::App` state (`StealthApp`), because `eframe::App` and its update cycles exclusively run on the main UI thread.
+**Action:** Always cache `Capstone` contexts inside the application state structure rather than continuously rebuilding it per-function call. This resolves performance bottlenecks on disassembly.
