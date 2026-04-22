@@ -1,0 +1,3 @@
+## 2024-05-20 - Expensive Capstone Initialization
+**Learning:** `Capstone` disassembly engine initialization in Rust is highly computationally expensive because it bridges to a C FFI layer. Repeatedly initializing it per memory read block caused significant frontend UI lag and high CPU spikes. Additionally, `Capstone` doesn't implement the `Send` trait, which prevents it from being passed across threads or channels.
+**Action:** Always cache the `Capstone` instance in the main UI thread's application state (e.g., `StealthApp` for `eframe`) rather than instantiating it dynamically per function call or background thread.
