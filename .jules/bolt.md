@@ -1,0 +1,3 @@
+## 2024-04-28 - Rust Capstone Initialization Overhead
+**Learning:** Re-initializing the `Capstone` disassembly engine (`Capstone::new()...build()`) on every request in `disassemble_arm64` causes massive CPU overhead, especially when parsing dynamic raw memory streams during GUI rendering. The `Capstone` engine does not implement `Send` but is safe to store in `Option<Capstone>` within an `eframe::App` state because `eframe` runs exclusively on the main UI thread.
+**Action:** Always cache `Capstone` instances within the global UI state (`StealthApp` struct) during initialization, and pass `&self.cs` to access the engine, preventing repeated instantiation overhead.
