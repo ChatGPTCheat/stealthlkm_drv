@@ -1,0 +1,3 @@
+## 2024-05-24 - [Rust eframe App State Caching]
+**Learning:** Capstone is computationally expensive to initialize and does not implement the `Send` trait. However, it can be safely stored and cached within an `eframe::App` application state (`StealthApp`) as `Option<Capstone>` because `eframe::App` instances are guaranteed to run entirely on the main UI thread, avoiding `Send` requirement issues.
+**Action:** When caching objects that don't implement `Send` in Rust GUI frameworks like `eframe`, store them in the main App struct and pass them by reference to rendering/processing methods rather than attempting to pass them across threads via channels or `Arc<Mutex>`.
