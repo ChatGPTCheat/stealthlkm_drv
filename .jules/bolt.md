@@ -1,0 +1,3 @@
+## 2024-05-24 - Cache Capstone Disassembler Initialization
+**Learning:** Initializing the Capstone disassembly engine per-function call is highly computationally expensive in Rust, leading to severe UI lag when updating the memory view in real-time. Capstone doesn't implement `Send` so it can't be shared across threads, but since `eframe` processes UI events on the main thread, we can safely cache it in the main application state (`StealthApp`).
+**Action:** Always cache expensive parser/disassembler instances in the application state when they are heavily reused, specifically tying non-`Send` objects to the main thread's state struct.
