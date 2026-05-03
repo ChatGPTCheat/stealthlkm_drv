@@ -1,0 +1,3 @@
+## 2024-05-15 - Capstone Initialization Overhead in Rust GUI
+**Learning:** `Capstone::new().build()` is computationally expensive and should not be called repeatedly (e.g., inside every `disassemble_arm64` call or render loop). It takes significant time to load the underlying C library definitions and initialize the architecture context.
+**Action:** Always cache the `Capstone` engine in the application state (e.g., inside the `StealthApp` struct on the main UI thread) and reuse it across multiple disassemble requests to eliminate the overhead.
