@@ -1,0 +1,3 @@
+## 2026-05-05 - Capstone Initialization Bottleneck
+**Learning:** Capstone engine is computationally expensive to initialize and can cause performance bottlenecks when created dynamically inside methods called frequently like `disassemble_arm64`. Although `Capstone` does not implement the `Send` trait, it is safe to store it in `StealthApp` since `eframe::App` instances run exclusively on the main UI thread.
+**Action:** Cache the Capstone instance as an Option inside the main UI state struct (`StealthApp`) to avoid expensive dynamic re-initializations and pass it by reference to processing methods.
