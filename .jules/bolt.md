@@ -1,0 +1,3 @@
+## 2024-05-06 - Capstone Initialization Bottleneck
+**Learning:** Capstone initialization is computationally expensive and significantly degrades performance when done on every memory read. Additionally, `Capstone` does not implement the `Send` trait, meaning it cannot be passed between threads and must be cached within the `eframe::App` state (which runs entirely on the main UI thread).
+**Action:** Always cache `Capstone` instances within the application state (e.g., `Option<Capstone>`) and initialize it lazily or during app startup to prevent repeated instantiation overhead.
