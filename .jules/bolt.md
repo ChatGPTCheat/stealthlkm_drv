@@ -1,0 +1,3 @@
+## 2024-05-19 - Cached Capstone Engine Initialization
+**Learning:** Initializing the Capstone disassembly engine is an expensive operation that causes performance bottlenecks if placed inside UI rendering or event polling loops in the eframe::egui immediate mode framework. Although `Capstone` does not implement `Send`, it is safe to cache in `StealthApp` since `eframe::App` runs on the main UI thread.
+**Action:** Always cache expensive initializations like the Capstone engine in the application state (`StealthApp`) instead of re-instantiating them dynamically during event processing or rendering.
