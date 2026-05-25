@@ -1,0 +1,3 @@
+## 2026-05-25 - Caching Capstone Disassembly Engine
+**Learning:** Initializing the Capstone disassembly engine is an expensive operation that was occurring within the UI polling loop every time memory was read. In an immediate-mode UI like eframe/egui, this can block the main thread and cause UI stuttering, especially on frequent memory reads. Although Capstone doesn't implement `Send`, it's safe to store in the `StealthApp` struct because `eframe::App` instances run strictly on the main UI thread.
+**Action:** Always cache expensive third-party library instances (like disassembly engines or syntax highlighters) in the application state rather than recreating them on demand, ensuring they are only initialized once.
