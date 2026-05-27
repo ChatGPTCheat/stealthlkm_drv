@@ -1,0 +1,3 @@
+## 2025-02-12 - eframe Application State Caching
+**Learning:** Initializing expensive libraries like `Capstone` for reverse-engineering/disassembly operations within frequently called UI update or polling loops dramatically limits frontend performance. However, because `eframe::App` operates on the main UI thread, components that do not implement `Send`/`Sync` (like Capstone) can be safely cached inside the main `Option<Capstone>` state struct.
+**Action:** When implementing GUI tools, cache non-Send external FFI dependencies directly in the `eframe::App` structure instead of reconstructing them continuously per-request or per-frame.
