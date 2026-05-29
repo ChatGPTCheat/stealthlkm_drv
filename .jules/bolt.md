@@ -1,0 +1,3 @@
+## 2024-05-24 - Expensive Capstone Initialization in UI Loop
+**Learning:** Initializing the `Capstone` disassembly engine is an expensive operation. Previously, it was being initialized on every UI render loop inside `disassemble_arm64`. Although `Capstone` does not implement `Send`, it is safe to cache and store within the `StealthApp` struct because `eframe::App` instances run entirely on the main UI thread, avoiding concurrency issues.
+**Action:** Always cache expensive initializations (like disassembler engines) in the application state rather than recreating them inside hot code paths or UI event polling loops.
