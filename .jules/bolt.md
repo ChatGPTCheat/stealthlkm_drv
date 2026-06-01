@@ -1,0 +1,3 @@
+## 2025-06-01 - Disassembly Optimization in Rust GUI
+**Learning:** Initializing the Capstone disassembly engine per memory read request (`disassemble_arm64`) introduces noticeable performance overhead during continuous UI polling/updates, especially when dealing with live memory inspection.
+**Action:** Always cache expensive third-party library initialization objects (like `Capstone`) in the main application state (`StealthApp` in this case). Although Capstone might not implement `Send`, it is safe to cache in the `eframe::App` state because UI updates run on a single main thread. Pass the cached instance by reference to processing functions.
