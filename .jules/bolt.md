@@ -1,0 +1,3 @@
+## 2024-03-21 - [GUI FFI Bottleneck]
+**Learning:** Re-initializing an FFI object like `Capstone` for every single network event or disassembly request is a severe bottleneck in a Rust eframe/egui GUI application. Even though it is cheap in some contexts, doing it repeatedly blocks the UI thread if not careful, and causes unnecessary latency when viewing code.
+**Action:** Cache expensive FFI components inside the main `App` struct state. Since `eframe::App` instances run on the main UI thread, non-`Send` types like `Capstone` can be safely stored there without compilation issues.
