@@ -1,0 +1,3 @@
+## 2024-05-18 - Costly Object Initialization in Immediate Mode GUI Loops
+**Learning:** Initializing heavy dependencies like the Capstone disassembly engine on demand during memory reads in an immediate mode framework (egui) adds massive latency and can drop frames because it runs every time new data arrives. Capstone takes considerable time to set up internally.
+**Action:** Cache heavy instances like Capstone inside the application state structure (`StealthApp`). They can safely be stored in `App` even if they don't implement `Send`, as long as they are used on the main rendering thread. Handle the initialization gracefully with `.ok()` to avoid crashes on startup if it fails.
