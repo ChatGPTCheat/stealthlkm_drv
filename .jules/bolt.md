@@ -1,0 +1,3 @@
+## 2024-06-11 - Cache Capstone Disassembler Initialization in GUI
+**Learning:** Initializing the Capstone engine via `Capstone::new()` is an expensive operation in Rust. In the immediate mode GUI, putting this initialization inside the message processing loop or inside a frequently called function (like memory reads via `UiNotify::MemResult`) can cause significant performance degradation or stuttering.
+**Action:** When using immediate mode GUIs like `egui`, instantiate heavy engines (like `Capstone`) once during application setup and store them in the application state. Pass references to these engines down to where they are needed.
