@@ -1,0 +1,3 @@
+## 2026-06-14 - [eframe immediate-mode Capstone Caching]
+**Learning:** Instantiating heavy FFI structures like `Capstone` (even if relatively fast on native code) inside an immediate-mode UI rendering loop or frequently triggered event handler (like receiving memory buffers over network) incurs unnecessary repeated overhead and initialization latency.
+**Action:** When working with `eframe` or immediate mode GUIs, cache heavy engines inside the Application state struct (e.g. `cs: Option<Capstone>`). Initialize it once during `App::new()` and pass it as a reference down to utility rendering functions.
