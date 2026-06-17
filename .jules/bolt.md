@@ -1,0 +1,3 @@
+## 2024-05-24 - [Cache Capstone Initialization]
+**Learning:** Initializing the `Capstone` engine on every `disassemble_arm64` call is expensive and blocks the UI thread because it's called on the main application loop context within eframe (by way of the memread network handler triggering ui events). Since `Capstone` isn't generic/thread safe to be sent without extra care, storing it securely in the `eframe::App` state is both safe and performs an immense improvement in responsive rendering.
+**Action:** Next time I work with a heavy native dependency in an immediate mode GUI, cache its initialization state within the root app struct right at startup.
