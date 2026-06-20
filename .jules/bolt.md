@@ -1,0 +1,3 @@
+## 2024-06-03 - [Capstone Initialization Bottleneck in Rust GUI]
+**Learning:** Initializing the Capstone engine using `Capstone::new()...build()` is a computationally expensive operation in Rust. Creating a new instance on every memory read inside `disassemble_arm64` causes severe performance degradation, blocking the `egui` UI thread on rapid memory inspection.
+**Action:** Store `Capstone` in the application state struct (like `StealthApp`) as `Option<Capstone>` and initialize it exactly once at startup. Use `.ok()` to gracefully handle errors without `unwrap`/`expect`, and pass a reference (`Option<&Capstone>`) to utility functions, saving thousands of repeated heap allocations and engine setup overhead per second.
