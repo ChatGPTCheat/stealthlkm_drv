@@ -1,0 +1,3 @@
+## 2024-06-24 - Cache Capstone Disassembler Initialization
+**Learning:** Capstone initialization (`Capstone::new().build()`) is an expensive operation that was previously being called synchronously inside the UI event loop every time memory was read, causing performance bottlenecks in the GUI. Although Capstone does not implement `Send` and thus cannot be shared across threads easily, `eframe::App` instances run entirely on the main UI thread.
+**Action:** Always cache expensive non-`Send` initializations (like Capstone) directly in the `eframe::App` state (e.g. `Option<Capstone>`) during application startup rather than re-instantiating them in hot paths.
