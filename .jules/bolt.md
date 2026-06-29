@@ -1,0 +1,3 @@
+## 2024-03-24 - Capstone Initialization Performance Issue
+**Learning:** Capstone initialization is extremely slow and expensive. When placed inside event polling loops (like parsing a stream of UI network results), it can cause significant bottlenecks in rendering and responsiveness. Furthermore, using `.expect()` or `.unwrap()` during this initialization in an asynchronous or polling context can lead to unexpected application crashes if the engine fails to build.
+**Action:** Always initialize Capstone once and cache it in the main application state (e.g., `Option<Capstone>` in `StealthApp`). Pass the cached reference down to disassembly helper functions. Handle the initialization gracefully with `.ok()` to avoid crashes on failure.
