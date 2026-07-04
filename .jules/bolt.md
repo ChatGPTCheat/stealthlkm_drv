@@ -1,0 +1,3 @@
+## 2024-05-01 - Cache Capstone initialization
+**Learning:** In the Rust `eframe::egui` app, expensive operations like `Capstone::new().build()` inside the UI update loop or frequent event handlers (like memory read results) cause unnecessary latency.
+**Action:** Initialize `Capstone` once and store it in the `StealthApp` state (`cs: Option<Capstone>`). Pass a reference to it when disassembling, instead of recreating it on every read.
