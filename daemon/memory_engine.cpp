@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <string.h>
+#include <sched.h>
 
 MemoryEngine::MemoryEngine(int target_pid) 
     : fd_(-1), target_pid_(target_pid), shm_(nullptr), is_valid_(false)
@@ -129,7 +130,11 @@ bool MemoryEngine::ReadBatch(const std::vector<uint64_t>& addresses, std::vector
          */
         while (__atomic_load_n(&shm_->kernel_seq, __ATOMIC_ACQUIRE) != next_seq) {
             // ARM64 Yield Hint (reduces power consumption during spin)
+            #if defined(__aarch64__)
             asm volatile("yield");
+#else
+            sched_yield();
+#endif
         }
 
         // Collect results from the completed chunk
@@ -207,7 +212,11 @@ bool MemoryEngine::ResumeHWBP(const struct StealthPtRegs& modified_regs) {
 
     // Block exactly until the kernel removes the active flag
     while (__atomic_load_n(&shm_->debug_event_active, __ATOMIC_ACQUIRE) == 1) {
-        asm volatile("yield");
+        #if defined(__aarch64__)
+            asm volatile("yield");
+#else
+            sched_yield();
+#endif
     }
 
     return true;
@@ -229,7 +238,11 @@ void MemoryEngine::SetSPEWatchpoint(uint64_t vaddr, uint32_t size) {
     __atomic_store_n(&shm_->cmd_type, 8, __ATOMIC_RELEASE);
 
     while (__atomic_load_n(&shm_->cmd_type, __ATOMIC_ACQUIRE) != 0) {
-        usleep(100);
+#if defined(__aarch64__)
+        asm volatile("yield");
+#else
+        sched_yield();
+#endif
     }
     printf("[SPE] Watchpoint activated successfully.\n");
 }
@@ -240,7 +253,11 @@ void MemoryEngine::RemoveSPEWatchpoint() {
     __atomic_store_n(&shm_->cmd_type, 9, __ATOMIC_RELEASE);
 
     while (__atomic_load_n(&shm_->cmd_type, __ATOMIC_ACQUIRE) != 0) {
-        usleep(100);
+#if defined(__aarch64__)
+        asm volatile("yield");
+#else
+        sched_yield();
+#endif
     }
     printf("[SPE] Watchpoint removed.\n");
 }
