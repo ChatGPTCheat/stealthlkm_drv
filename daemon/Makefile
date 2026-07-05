@@ -9,5 +9,8 @@ daemon:
 tester:
 	$(CPP_COMPILER) $(CPP_FLAGS) -o engine_tester memory_engine.cpp map_parser.cpp main.cpp
 
+test:
+	g++ -std=c++17 -o map_parser_test map_parser.cpp map_parser_test.cpp && ./map_parser_test
+
 clean:
-	rm -f stealth_daemon engine_tester
+	rm -f stealth_daemon engine_tester map_parser_test

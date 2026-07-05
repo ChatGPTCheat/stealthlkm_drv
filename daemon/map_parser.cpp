@@ -5,6 +5,10 @@
 
 uint64_t MemoryMapParser::GetModuleBase(pid_t pid, const std::string& module_name, uint64_t* out_size) {
     std::string maps_path = "/proc/" + std::to_string(pid) + "/maps";
+    return GetModuleBaseByPath(maps_path, module_name, out_size);
+}
+
+uint64_t MemoryMapParser::GetModuleBaseByPath(const std::string& maps_path, const std::string& module_name, uint64_t* out_size) {
     std::ifstream file(maps_path);
     if (!file.is_open()) {
         std::cerr << "[-] MemoryMapParser: Failed to open " << maps_path << "\n";
