@@ -461,12 +461,13 @@ fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
-                let mut out = String::new();
+                use std::fmt::Write;
+                let mut out = String::with_capacity(insns.len() * 32);
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(&mut out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
