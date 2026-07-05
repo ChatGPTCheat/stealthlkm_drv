@@ -11,21 +11,7 @@
 
 #include "memory_engine.h"
 #include "map_parser.h"
-
-// Simple dummy PID resolver
-int GetPidByName(const std::string& name) {
-    std::string cmd = "pidof " + name;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return -1;
-
-    char buffer[128] = {0};
-    if (fgets(buffer, 128, pipe)) {
-        pclose(pipe);
-        return std::stoi(buffer);
-    }
-    pclose(pipe);
-    return -1;
-}
+#include "pid_utils.h"
 
 // Function to test HWBP
 __attribute__((noinline)) void DummyTriggerFunction() {
