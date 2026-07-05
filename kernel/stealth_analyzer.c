@@ -698,12 +698,6 @@ static int __init stealth_analyzer_init(void)
 
 	pr_info("Stealth LKM: Kretprobe Hook on ashmem_open installed successfully!\n");
 
-	// SPE init moved to lazy initialization on first use
-	// ret = init_spe_engine();
-	// if (ret < 0) {
-	// 	pr_warn("Stealth LKM: SPE engine init failed (%d), continuing without SPE support\n", ret);
-	// }
-
 	return 0;
 }
 
