@@ -25,6 +25,86 @@ int GetPidOfProcess(const std::string& process_name) {
     return -1;
 }
 
+void HandleCmdGetBase(int client_fd, const NetCommand& req, NetCommand& res, int target_pid) {
+    // Client wants to know the base address of a module
+    char mod_name[256] = {0};
+    if (req.size > 0 && req.size < sizeof(mod_name)) {
+        recv(client_fd, mod_name, req.size, 0);
+    }
+
+    uint64_t base = MemoryMapParser::GetModuleBase(target_pid, std::string(mod_name));
+    res.address = base;
+    res.size = 0;
+    send(client_fd, &res, sizeof(NetCommand), 0);
+    std::cout << "[*] CMD_GET_BASE: " << mod_name << " -> 0x" << std::hex << base << std::dec << "\n";
+}
+
+void HandleCmdReadMem(int client_fd, const NetCommand& req, NetCommand& res, MemoryEngine& engine) {
+    std::cout << "[*] CMD_READ_MEM Start: 0x" << std::hex << req.address << std::dec << " Size: " << req.size << " bytes\n";
+    // Client wants to read memory blocks
+    uint32_t needed_chunks = (req.size + 7) / 8; // Calculate how many 8-byte chunks are needed
+    std::vector<uint64_t> addrs(needed_chunks);
+    for (uint32_t i = 0; i < needed_chunks; ++i) {
+        addrs[i] = req.address + i * 8;
+    }
+
+    std::vector<uint64_t> chunk_results;
+    bool success = engine.ReadBatch(addrs, chunk_results, 8);
+
+    if (success && chunk_results.size() == needed_chunks) {
+        res.size = req.size;
+        send(client_fd, &res, sizeof(NetCommand), 0);
+        // Send pure binary payload
+        send(client_fd, chunk_results.data(), req.size, 0);
+        std::cout << "[+] CMD_READ_MEM Success.\n";
+    } else {
+        res.size = 0; // Failure
+        send(client_fd, &res, sizeof(NetCommand), 0);
+        std::cout << "[-] CMD_READ_MEM Failed or partial read.\n";
+    }
+}
+
+void HandleCmdSetHwbp(int client_fd, const NetCommand& req, NetCommand& res, MemoryEngine& engine) {
+    bool hit = engine.SetHWBP(req.address);
+    res.address = hit ? 1 : 0;
+    res.size = 0;
+    send(client_fd, &res, sizeof(NetCommand), 0);
+    std::cout << "[*] CMD_SET_HWBP at 0x" << std::hex << req.address << std::dec << " -> " << hit << "\n";
+}
+
+void HandleCmdCheckDebugEvent(int client_fd, const NetCommand& req, NetCommand& res, MemoryEngine& engine) {
+    struct StealthPtRegs regs;
+    if (engine.CheckDebugEvent(&regs)) {
+        res.size = sizeof(StealthPtRegs);
+        send(client_fd, &res, sizeof(NetCommand), 0);
+        send(client_fd, &regs, sizeof(StealthPtRegs), 0);
+    } else {
+        res.size = 0;
+        send(client_fd, &res, sizeof(NetCommand), 0);
+    }
+}
+
+void HandleCmdRemoveHwbp(int client_fd, const NetCommand& req, NetCommand& res, MemoryEngine& engine) {
+    bool removed = engine.RemoveHWBP();
+    res.address = removed ? 1 : 0;
+    res.size = 0;
+    send(client_fd, &res, sizeof(NetCommand), 0);
+    std::cout << "[*] CMD_REMOVE_HWBP -> " << removed << "\n";
+}
+
+void HandleCmdResumeHwbp(int client_fd, const NetCommand& req, NetCommand& res, MemoryEngine& engine) {
+    struct StealthPtRegs regs;
+    if (req.size == sizeof(StealthPtRegs)) {
+        recv(client_fd, &regs, sizeof(StealthPtRegs), MSG_WAITALL);
+        engine.ResumeHWBP(regs);
+        engine.RemoveHWBP(); // Depending on continuous flow, removing HWBP might be needed per hit.
+        res.size = 1; // success
+    } else {
+        res.size = 0; // fail
+    }
+    send(client_fd, &res, sizeof(NetCommand), 0);
+}
+
 void HandleClient(int client_fd, MemoryEngine& engine, int target_pid) {
     std::cout << "[+] Client connected. Waiting for commands...\n";
     
@@ -40,86 +120,24 @@ void HandleClient(int client_fd, MemoryEngine& engine, int target_pid) {
         res.cmd_type = req.cmd_type;
 
         switch (req.cmd_type) {
-            case CMD_GET_BASE: {
-                // Client wants to know the base address of a module
-                char mod_name[256] = {0};
-                if (req.size > 0 && req.size < sizeof(mod_name)) {
-                    recv(client_fd, mod_name, req.size, 0);
-                }
-                
-                uint64_t base = MemoryMapParser::GetModuleBase(target_pid, std::string(mod_name));
-                res.address = base;
-                res.size = 0;
-                send(client_fd, &res, sizeof(NetCommand), 0);
-                std::cout << "[*] CMD_GET_BASE: " << mod_name << " -> 0x" << std::hex << base << std::dec << "\n";
+            case CMD_GET_BASE:
+                HandleCmdGetBase(client_fd, req, res, target_pid);
                 break;
-            }
-            case CMD_READ_MEM: {
-                std::cout << "[*] CMD_READ_MEM Start: 0x" << std::hex << req.address << std::dec << " Size: " << req.size << " bytes\n";
-                // Client wants to read memory blocks
-                uint32_t needed_chunks = (req.size + 7) / 8; // Calculate how many 8-byte chunks are needed
-                std::vector<uint64_t> addrs(needed_chunks);
-                for (uint32_t i = 0; i < needed_chunks; ++i) {
-                    addrs[i] = req.address + i * 8;
-                }
-                
-                std::vector<uint64_t> chunk_results;
-                bool success = engine.ReadBatch(addrs, chunk_results, 8);
-                
-                if (success && chunk_results.size() == needed_chunks) {
-                    res.size = req.size;
-                    send(client_fd, &res, sizeof(NetCommand), 0);
-                    // Send pure binary payload
-                    send(client_fd, chunk_results.data(), req.size, 0); 
-                    std::cout << "[+] CMD_READ_MEM Success.\n";
-                } else {
-                    res.size = 0; // Failure
-                    send(client_fd, &res, sizeof(NetCommand), 0);
-                    std::cout << "[-] CMD_READ_MEM Failed or partial read.\n";
-                }
+            case CMD_READ_MEM:
+                HandleCmdReadMem(client_fd, req, res, engine);
                 break;
-            }
-            case CMD_SET_HWBP: {
-                bool hit = engine.SetHWBP(req.address);
-                res.address = hit ? 1 : 0;
-                res.size = 0;
-                send(client_fd, &res, sizeof(NetCommand), 0);
-                std::cout << "[*] CMD_SET_HWBP at 0x" << std::hex << req.address << std::dec << " -> " << hit << "\n";
+            case CMD_SET_HWBP:
+                HandleCmdSetHwbp(client_fd, req, res, engine);
                 break;
-            }
-            case CMD_CHECK_DEBUG_EVENT: {
-                struct StealthPtRegs regs;
-                if (engine.CheckDebugEvent(&regs)) {
-                    res.size = sizeof(StealthPtRegs);
-                    send(client_fd, &res, sizeof(NetCommand), 0);
-                    send(client_fd, &regs, sizeof(StealthPtRegs), 0);
-                } else {
-                    res.size = 0;
-                    send(client_fd, &res, sizeof(NetCommand), 0);
-                }
+            case CMD_CHECK_DEBUG_EVENT:
+                HandleCmdCheckDebugEvent(client_fd, req, res, engine);
                 break;
-            }
-            case CMD_REMOVE_HWBP: {
-                bool removed = engine.RemoveHWBP();
-                res.address = removed ? 1 : 0;
-                res.size = 0;
-                send(client_fd, &res, sizeof(NetCommand), 0);
-                std::cout << "[*] CMD_REMOVE_HWBP -> " << removed << "\n";
+            case CMD_REMOVE_HWBP:
+                HandleCmdRemoveHwbp(client_fd, req, res, engine);
                 break;
-            }
-            case CMD_RESUME_HWBP: {
-                struct StealthPtRegs regs;
-                if (req.size == sizeof(StealthPtRegs)) {
-                    recv(client_fd, &regs, sizeof(StealthPtRegs), MSG_WAITALL);
-                    engine.ResumeHWBP(regs);
-                    engine.RemoveHWBP(); // Depending on continuous flow, removing HWBP might be needed per hit.
-                    res.size = 1; // success
-                } else {
-                    res.size = 0; // fail
-                }
-                send(client_fd, &res, sizeof(NetCommand), 0);
+            case CMD_RESUME_HWBP:
+                HandleCmdResumeHwbp(client_fd, req, res, engine);
                 break;
-            }
             default:
                 std::cout << "[-] Unknown command type: " << req.cmd_type << "\n";
                 break;
