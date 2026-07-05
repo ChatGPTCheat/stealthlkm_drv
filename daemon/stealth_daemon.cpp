@@ -9,21 +9,7 @@
 #include "memory_engine.h"
 #include "net_protocol.h"
 #include "map_parser.h"
-
-// Forward declaration from main.cpp / local utils for PID resolving
-// For simplicity, we implement a naive pidof using shell 
-int GetPidOfProcess(const std::string& process_name) {
-    char buf[512];
-    std::string cmd = "pidof -s " + process_name;
-    FILE *cmd_pipe = popen(cmd.c_str(), "r");
-    if (!cmd_pipe) return -1;
-    if (fgets(buf, 512, cmd_pipe) != NULL) {
-        pclose(cmd_pipe);
-        return std::stoi(buf); // Converts string PID to int
-    }
-    pclose(cmd_pipe);
-    return -1;
-}
+#include "pid_utils.h"
 
 void HandleClient(int client_fd, MemoryEngine& engine, int target_pid) {
     std::cout << "[+] Client connected. Waiting for commands...\n";
@@ -144,7 +130,7 @@ int main(int argc, char* argv[]) {
             target_pid = std::stoi(arg1);
         } catch (...) {
             // Fallback to name resolution
-            target_pid = GetPidOfProcess(arg1);
+            target_pid = GetPidByName(arg1);
         }
     }
 
