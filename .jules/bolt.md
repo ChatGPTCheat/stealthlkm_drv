@@ -1,0 +1,3 @@
+## 2024-11-20 - [Network Worker Loop CPU Optimization]
+**Learning:** Polling mpsc channels with `try_recv()` inside a loop that calls `std::thread::sleep()` causes excessive CPU wakeups, context switches, and poor response latency (bounded by the sleep duration). It forces the CPU to burn cycles spinning instead of efficiently waiting on an OS-level event.
+**Action:** When implementing background worker threads that wait on channels and timers, use `recv_timeout(Duration)` to precisely block until either a new message arrives or the timeout expires. If waiting indefinitely, use a long, safe duration (like 1 year) instead of busy-waiting.
