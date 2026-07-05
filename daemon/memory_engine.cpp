@@ -129,7 +129,13 @@ bool MemoryEngine::ReadBatch(const std::vector<uint64_t>& addresses, std::vector
          */
         while (__atomic_load_n(&shm_->kernel_seq, __ATOMIC_ACQUIRE) != next_seq) {
             // ARM64 Yield Hint (reduces power consumption during spin)
-            asm volatile("yield");
+            #if defined(__aarch64__)
+asm volatile("yield");
+#elif defined(__x86_64__)
+asm volatile("pause");
+#else
+__asm__ __volatile__ ("");
+#endif
         }
 
         // Collect results from the completed chunk
@@ -207,7 +213,13 @@ bool MemoryEngine::ResumeHWBP(const struct StealthPtRegs& modified_regs) {
 
     // Block exactly until the kernel removes the active flag
     while (__atomic_load_n(&shm_->debug_event_active, __ATOMIC_ACQUIRE) == 1) {
-        asm volatile("yield");
+        #if defined(__aarch64__)
+asm volatile("yield");
+#elif defined(__x86_64__)
+asm volatile("pause");
+#else
+__asm__ __volatile__ ("");
+#endif
     }
 
     return true;
