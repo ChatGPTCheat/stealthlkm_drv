@@ -1,0 +1,3 @@
+## 2024-06-25 - [Immediate Mode UI and FFI Overhead]
+**Learning:** `egui`'s immediate mode rendering loop recalculates the entire UI frame continuously (e.g., polling every 50ms here). Executing repeated FFI initializations (like building the `Capstone` disassembly engine) or making heavy per-iteration string allocations (`format!`) inside this render loop completely stalls the UI thread, severely degrading latency.
+**Action:** Cache heavy resources like FFI structures (`Capstone`) in the application state during initialization. Replace `format!` macros inside critical loops with `std::fmt::Write::write!` on pre-allocated strings (`String::with_capacity`) to eliminate rendering stutters.
