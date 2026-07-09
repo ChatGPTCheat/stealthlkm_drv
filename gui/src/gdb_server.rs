@@ -1,10 +1,12 @@
-use crate::{NetRequest, StealthPtRegs};
+use crate::NetRequest;
+use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 
 pub fn run_gdb_server(net_tx: mpsc::Sender<NetRequest>) {
-    let listener = TcpListener::bind("127.0.0.1:23946").expect("GDB Server failed to bind to 23946");
+    let listener =
+        TcpListener::bind("127.0.0.1:23946").expect("GDB Server failed to bind to 23946");
     println!("[GDB] Server listening on 127.0.0.1:23946 for IDA Pro...");
 
     for stream in listener.incoming() {
@@ -19,7 +21,7 @@ pub fn run_gdb_server(net_tx: mpsc::Sender<NetRequest>) {
 
 fn handle_client(stream: &mut TcpStream, net_tx: mpsc::Sender<NetRequest>) {
     let mut buffer = [0u8; 4096];
-    
+
     // GDB often sends a global + initially
     stream.write_all(b"+").ok();
 
@@ -72,20 +74,29 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
         return "PacketSize=1000;qXfer:features:read+;qXfer:memory-map:read+".to_string();
     }
     if cmd.starts_with("qXfer:features:read:target.xml:") {
-        let mut xml = String::from(r#"<?xml version="1.0"?>
+        let mut xml = String::from(
+            r#"<?xml version="1.0"?>
 <!DOCTYPE target SYSTEM "gdb-target.dtd">
 <target>
   <architecture>aarch64</architecture>
   <feature name="org.gnu.gdb.aarch64.core">
-"#);
+"#,
+        );
         for i in 0..=30 {
-            xml.push_str(&format!(r#"    <reg name="x{}" bitsize="64" type="uint64"/>{}"#, i, "\n"));
+            write!(
+                xml,
+                r#"    <reg name="x{}" bitsize="64" type="uint64"/>{}"#,
+                i, "\n"
+            )
+            .unwrap();
         }
-        xml.push_str(r#"    <reg name="sp" bitsize="64" type="data_ptr"/>
+        xml.push_str(
+            r#"    <reg name="sp" bitsize="64" type="data_ptr"/>
     <reg name="pc" bitsize="64" type="code_ptr"/>
     <reg name="cpsr" bitsize="64"/>
   </feature>
-</target>"#);
+</target>"#,
+        );
         return format!("l{}", xml);
     }
     if cmd.starts_with("qXfer:memory-map:read:") {
@@ -120,14 +131,15 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                 let payload = bytemuck::bytes_of(&regs);
                 let mut hex_str = String::with_capacity(payload.len() * 2);
                 for &b in payload.iter() {
-                    hex_str.push_str(&format!("{:02x}", b));
+                    write!(hex_str, "{:02x}", b).unwrap();
                 }
                 return hex_str;
             }
         }
-        
+
         let mut hex_regs = String::with_capacity(544);
-        for _ in 0..272 { // 34 registers * 8 bytes = 272 bytes
+        for _ in 0..272 {
+            // 34 registers * 8 bytes = 272 bytes
             hex_regs.push_str("00");
         }
         return hex_regs;
@@ -136,13 +148,16 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
         // mADDR,LENGTH
         let parts: Vec<&str> = cmd[1..].split(',').collect();
         if parts.len() == 2 {
-            if let (Ok(addr), Ok(len)) = (u64::from_str_radix(parts[0], 16), u32::from_str_radix(parts[1], 16)) {
+            if let (Ok(addr), Ok(len)) = (
+                u64::from_str_radix(parts[0], 16),
+                u32::from_str_radix(parts[1], 16),
+            ) {
                 let (cb_tx, cb_rx) = mpsc::channel();
                 if net_tx.send(NetRequest::ReadMem(addr, len, cb_tx)).is_ok() {
                     if let Ok(data) = cb_rx.recv() {
                         let mut hex_str = String::with_capacity(data.len() * 2);
                         for b in data {
-                            hex_str.push_str(&format!("{:02x}", b));
+                            write!(hex_str, "{:02x}", b).unwrap();
                         }
                         return hex_str;
                     }
