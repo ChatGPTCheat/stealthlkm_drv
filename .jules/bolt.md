@@ -1,0 +1,3 @@
+## 2024-05-13 - Format Macro Performance In Loops
+**Learning:** Using `format!` inside hot loops (like processing memory chunks or GDB server bytes) causes severe performance degradation because it allocates a new `String` on the heap for every single iteration, just to immediately append it and discard it.
+**Action:** When appending formatted values inside loops, use the `write!` macro with `std::fmt::Write` to format bytes directly into a pre-allocated `String` buffer (e.g. `let _ = write!(hex_str, "{:02X}", b);`), eliminating unnecessary intermediate heap allocations. Always remember to alias the import (`use std::fmt::Write as FmtWrite;`) if `std::io::Write` is already in scope to avoid trait naming collisions.
