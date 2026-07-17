@@ -1,0 +1,3 @@
+## 2024-05-15 - [Formatting strings within immediate mode UI renders]
+**Learning:** In eframe/egui, `format!` allocates strings inside rendering loops which run every frame. This creates massive overhead. Using `std::fmt::Write` (as `FmtWrite`) to append formatted text into pre-allocated strings (`String::with_capacity()`) avoids continuous per-iteration string heap allocations.
+**Action:** Replace `format!` with `write!` or `writeln!` on pre-allocated strings wherever formatting happens inside tight loops or UI updates, ensuring traits are aliased correctly (`use std::io::Write as IoWrite; use std::fmt::Write as FmtWrite;`) to avoid compiler collisions.
