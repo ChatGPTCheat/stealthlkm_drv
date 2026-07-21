@@ -1,0 +1,3 @@
+## 2024-05-14 - String Allocation in eframe/egui Hot Loops
+**Learning:** The immediate-mode UI framework `eframe/egui` renders the UI extremely frequently. Using `format!` within these tight rendering loops (e.g., when dynamically generating hex dumps or disassembling instructions) creates a severe performance bottleneck due to thousands of short-lived `String` heap allocations per second.
+**Action:** Always pre-allocate strings using `String::with_capacity()` based on the expected payload size and format directly into them using `std::fmt::Write` (e.g., `write!`, `writeln!`) to avoid intermediate allocations inside render loops.
