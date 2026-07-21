@@ -1,5 +1,6 @@
-use crate::{NetRequest, StealthPtRegs};
-use std::io::{Read, Write};
+use crate::NetRequest;
+use std::io::{Read, Write as IoWrite};
+use std::fmt::Write as FmtWrite;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 
@@ -79,7 +80,8 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
   <feature name="org.gnu.gdb.aarch64.core">
 "#);
         for i in 0..=30 {
-            xml.push_str(&format!(r#"    <reg name="x{}" bitsize="64" type="uint64"/>{}"#, i, "\n"));
+            // ⚡ Bolt Optimization: write directly to the buffer instead of using format! inside the loop
+            writeln!(xml, r#"    <reg name="x{}" bitsize="64" type="uint64"/>"#, i).unwrap();
         }
         xml.push_str(r#"    <reg name="sp" bitsize="64" type="data_ptr"/>
     <reg name="pc" bitsize="64" type="code_ptr"/>
@@ -118,9 +120,10 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
         if net_tx.send(NetRequest::GdbGetRegisters(cb_tx)).is_ok() {
             if let Ok(Some(regs)) = cb_rx.recv() {
                 let payload = bytemuck::bytes_of(&regs);
+                // ⚡ Bolt Optimization: avoiding format!() inside the loop
                 let mut hex_str = String::with_capacity(payload.len() * 2);
                 for &b in payload.iter() {
-                    hex_str.push_str(&format!("{:02x}", b));
+                    write!(hex_str, "{:02x}", b).unwrap();
                 }
                 return hex_str;
             }
@@ -140,9 +143,10 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                 let (cb_tx, cb_rx) = mpsc::channel();
                 if net_tx.send(NetRequest::ReadMem(addr, len, cb_tx)).is_ok() {
                     if let Ok(data) = cb_rx.recv() {
+                        // ⚡ Bolt Optimization: avoiding format!() inside the loop
                         let mut hex_str = String::with_capacity(data.len() * 2);
                         for b in data {
-                            hex_str.push_str(&format!("{:02x}", b));
+                            write!(hex_str, "{:02x}", b).unwrap();
                         }
                         return hex_str;
                     }
