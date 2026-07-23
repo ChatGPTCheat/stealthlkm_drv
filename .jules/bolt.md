@@ -1,0 +1,3 @@
+## 2024-06-25 - Avoid format! macro in egui render loops
+**Learning:** Using the `format!` macro inside `eframe/egui` immediate-mode UI rendering loops incurs massive overhead. Because the UI is re-rendered continuously (e.g., every frame or multiple times per second via `ctx.request_repaint_after`), `format!` triggers continuous heap allocations and deallocations for strings, causing significant GC pressure and stuttering.
+**Action:** Use `std::fmt::Write` and the `write!` macro directly on pre-allocated strings (e.g., `String::with_capacity()`) within hot UI loops to reuse memory and eliminate per-frame allocations. If `std::io::Write` is also imported, alias them appropriately (e.g., `use std::fmt::Write as FmtWrite;`) to avoid compiler collisions.
