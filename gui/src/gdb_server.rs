@@ -1,5 +1,5 @@
-use crate::{NetRequest, StealthPtRegs};
-use std::io::{Read, Write};
+use crate::NetRequest;
+use std::io::{Read, Write as IoWrite};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 
