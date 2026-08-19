@@ -1,0 +1,3 @@
+## 2024-05-20 - Immediate Mode UI Rendering Bottleneck
+**Learning:** In the Rust GUI application using `eframe::egui`, UI render functions execute continuously (up to 60fps). Using `format!` inside these loops (like for generating hex dumps) incurs a massive performance penalty due to continuous per-frame per-iteration string heap allocations. Similarly, initializing heavy objects like the `Capstone` disassembly engine on the fly blocks the UI thread.
+**Action:** Always pre-allocate strings using `String::with_capacity` and use `std::fmt::Write` inside tight loops in `egui`. Cache expensive initializations (like `Capstone`) in the main application state (`StealthApp`).
