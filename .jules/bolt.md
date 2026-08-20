@@ -1,0 +1,3 @@
+## 2024-08-20 - eframe/egui String Formatting Overhead
+**Learning:** Using `format!` macros inside `eframe` GUI rendering loops (which run every frame) incurs a massive overhead due to continuous heap allocations. Pre-allocating a `String` with `String::with_capacity` and using `std::fmt::Write` with the `write!` macro avoids these continuous allocations, providing a significant performance boost in tight rendering paths.
+**Action:** Always refactor string building inside UI loops by using `String::with_capacity` and `write!` instead of `format!`, especially when dealing with data chunks, loops over raw memory, or disassembly rendering.
