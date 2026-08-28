@@ -1,0 +1,3 @@
+## 2024-05-24 - Avoid `format!` in immediate-mode rendering loops
+**Learning:** In the `gui/src/main.rs` file, the `eframe`/`egui` immediate mode UI rendering loop continuously rebuilds the UI. Using `format!` within this loop (e.g., inside iterations over chunks of memory for hex dumping) allocates a huge amount of short-lived Strings on the heap. Even a simple hex dump can be heavily optimized by using `std::fmt::Write` with pre-allocated strings (`String::with_capacity`).
+**Action:** Replace `format!` usage inside hot render loops in `gui/src/main.rs` with `std::fmt::Write` to prevent massive per-frame allocations and dramatically lower CPU overhead. Ensure `std::fmt::Write as FmtWrite` is imported.
