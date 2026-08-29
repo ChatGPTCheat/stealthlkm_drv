@@ -1,5 +1,6 @@
 use crate::{NetRequest, StealthPtRegs};
 use std::io::{Read, Write};
+use std::fmt::Write as FmtWrite;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 
@@ -79,7 +80,8 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
   <feature name="org.gnu.gdb.aarch64.core">
 "#);
         for i in 0..=30 {
-            xml.push_str(&format!(r#"    <reg name="x{}" bitsize="64" type="uint64"/>{}"#, i, "\n"));
+            // ⚡ Bolt: Optimize XML generation by directly writing into the buffer
+            let _ = write!(xml, "    <reg name=\"x{}\" bitsize=\"64\" type=\"uint64\"/>\n", i);
         }
         xml.push_str(r#"    <reg name="sp" bitsize="64" type="data_ptr"/>
     <reg name="pc" bitsize="64" type="code_ptr"/>
@@ -120,7 +122,8 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                 let payload = bytemuck::bytes_of(&regs);
                 let mut hex_str = String::with_capacity(payload.len() * 2);
                 for &b in payload.iter() {
-                    hex_str.push_str(&format!("{:02x}", b));
+                    // ⚡ Bolt: Prevent intermediate allocations using write! macro
+                    let _ = write!(hex_str, "{:02x}", b);
                 }
                 return hex_str;
             }
@@ -142,7 +145,8 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                     if let Ok(data) = cb_rx.recv() {
                         let mut hex_str = String::with_capacity(data.len() * 2);
                         for b in data {
-                            hex_str.push_str(&format!("{:02x}", b));
+                            // ⚡ Bolt: Prevent intermediate allocations using write! macro
+                            let _ = write!(hex_str, "{:02x}", b);
                         }
                         return hex_str;
                     }
