@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::fmt::Write as FmtWrite;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -226,9 +227,10 @@ impl StealthApp {
                     if ui.button("📋 Copy All (Hex)").clicked() {
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            // ⚡ Bolt: Use write! macro instead of format! to avoid allocating intermediate strings in tight loops
+                            let _ = write!(dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(dump, "{:02X} ", b);
                             }
                             dump.push('\n');
                         }
@@ -261,8 +263,9 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            // ⚡ Bolt: Pre-allocate hex_str capacity and use write! to prevent continuous heap allocations during UI rendering
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -463,10 +466,11 @@ fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
                 }
                 let mut out = String::new();
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    // ⚡ Bolt: Use writeln! to stream data directly into the out string buffer, avoiding intermediate format allocations
+                    let _ = writeln!(out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
