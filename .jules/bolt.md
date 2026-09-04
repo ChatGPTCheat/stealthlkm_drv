@@ -1,0 +1,3 @@
+## 2024-09-04 - Rust GUI Optimization: Avoiding Heap Allocations in Render Loops
+**Learning:** In eframe/egui UI applications in Rust that render continuously (e.g., polling every 50ms), using `format!` macro directly inside loop string generation (like a hex viewer or disassembler view) causes thousands of intermediate heap allocations per second.
+**Action:** Replace `format!` by allocating an outer buffer using `String::with_capacity` and generating strings with `std::fmt::Write` trait via the `write!` or `writeln!` macros to minimize allocator pressure and optimize UI rendering frame drops. Furthermore, test files or binary artifacts from scratchpads must explicitly be removed to keep commits clean.
