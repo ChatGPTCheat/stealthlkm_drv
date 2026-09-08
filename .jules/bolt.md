@@ -1,0 +1,3 @@
+## 2024-05-18 - Replacing `format!` with `write!` in UI Rendering Loops
+**Learning:** `egui` immediate mode UI redraws potentially at 60fps. Using `format!` inside rendering loops, especially for displaying large hex views or disassembly blocks, causes immense overhead due to per-frame string heap allocations. The `std::fmt::Write` macro (`write!`) on a pre-allocated `String` significantly reduces allocations and overhead from O(N) allocations per frame to O(1).
+**Action:** Always pre-allocate strings (`String::with_capacity`) and use `write!` instead of `format!` for heavy string construction in UI rendering loops or performance-critical areas. Use import aliases (e.g., `use std::io::{Read, Write as IoWrite};`) when `std::io::Write` and `std::fmt::Write` collide.
