@@ -1,0 +1,3 @@
+## 2024-05-24 - `format!` loop allocation in Immediate Mode GUIs
+**Learning:** `eframe::egui` recalculates and repaints the entire UI very frequently (sometimes every frame). Using `format!` inside these hot render loops causes massive continuous heap allocations. `String::with_capacity` combined with `std::fmt::Write::write_fmt` eliminates these continuous small allocations by reusing and directly pushing to an allocated buffer.
+**Action:** When working in Rust immediate mode GUIs, always scan for `format!` macro calls inside UI generation loops (like inside `for _ in chunk`) and replace them with `write!` onto pre-allocated Strings. Ensure to use alias `use std::fmt::Write as FmtWrite;` if `std::io::Write` is already in scope to prevent trait conflict errors.
