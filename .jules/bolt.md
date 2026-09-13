@@ -1,0 +1,3 @@
+## 2025-02-18 - Replacing format! with write! for Performance
+**Learning:** In a Rust GUI application that draws 60 frames per second, avoiding heavy heap allocation inside tight loops like `for` is extremely important. By converting `dump.push_str(&format!(...))` to `write!(dump, ...)` using `std::fmt::Write`, string heap allocations inside loops are drastically reduced. This strategy was applied to both the egui `main.rs` loop and the TCP packet processing code in `gdb_server.rs` to alleviate a major performance bottleneck for a realtime hex viewer.
+**Action:** Always verify loops for implicit or explicit heap allocations like `format!` and convert them to append in-place with `write!` or other pre-allocated methodologies to conserve frame budgets.
