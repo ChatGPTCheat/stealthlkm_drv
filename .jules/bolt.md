@@ -1,0 +1,3 @@
+## 2024-05-24 - eframe::egui `format!` in loops
+**Learning:** In the Rust components (`gui/src/main.rs`, `gui/src/gdb_server.rs`), especially within `eframe::egui` immediate-mode UI rendering loops that execute every frame, using `format!` within loops incurs massive overhead due to continuous per-iteration string heap allocations.
+**Action:** Replace `format!` in loops (like rendering hex dumps or disassembly) with `std::fmt::Write` and the `write!` macro directly on pre-allocated strings (`String::with_capacity`). Alias `std::fmt::Write as FmtWrite` when `std::io::Write` is also imported to prevent trait naming collisions.
