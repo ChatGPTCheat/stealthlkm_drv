@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
-use std::io::{Read, Write};
+use std::io::{Read, Write as IoWrite};
+use std::fmt::Write as FmtWrite;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -118,13 +119,13 @@ impl StealthApp {
     fn process_net_events(&mut self) {
         while let Ok(msg) = self.ui_rx.try_recv() {
             match msg {
-                UiNotify::Error(err) => self.status_msg = format!("Error: {}", err),
+                UiNotify::Error(err) => { self.status_msg.clear(); let _ = write!(self.status_msg, "Error: {}", err); },
                 UiNotify::BaseResult(base) => {
                     self.base_address = base;
-                    self.status_msg = format!("Found base: 0x{:x}", base);
+                    self.status_msg.clear(); let _ = write!(self.status_msg, "Found base: 0x{:x}", base);
                 }
                 UiNotify::MemResult(addr, data) => {
-                    self.status_msg = format!("Read {} bytes from 0x{:x}", data.len(), addr);
+                    self.status_msg.clear(); let _ = write!(self.status_msg, "Read {} bytes from 0x{:x}", data.len(), addr);
                     self.last_read_addr = addr;
                     self.raw_memory = data.clone();
                     self.disasm_text = disassemble_arm64(&data, addr);
@@ -226,9 +227,9 @@ impl StealthApp {
                     if ui.button("📋 Copy All (Hex)").clicked() {
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            let _ = write!(dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(dump, "{:02X} ", b);
                             }
                             dump.push('\n');
                         }
@@ -261,8 +262,8 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -461,12 +462,12 @@ fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
-                let mut out = String::new();
+                let mut out = String::with_capacity(insns.len() * 40);
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {

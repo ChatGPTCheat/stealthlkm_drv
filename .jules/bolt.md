@@ -1,0 +1,3 @@
+## 2025-09-15 - [UI Render Loop Memory Optimization]
+**Learning:** Found an inefficient pattern where the GUI rendering loop iterates over raw bytes and calls `format!` continuously. The `format!` macro incurs severe performance overhead inside `egui` update loops due to continuous heap allocations for string buffers.
+**Action:** Replaced `format!` macro calls inside loops with pre-allocated strings and `write!` / `writeln!` traits to eliminate thousands of small heap allocations per frame, massively increasing UI responsiveness during dense data parsing. Always use pre-allocated buffers and `std::fmt::Write` inside tight eframe rendering loops for raw memory or string builder applications.
