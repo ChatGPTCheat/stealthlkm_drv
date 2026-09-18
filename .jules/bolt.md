@@ -1,0 +1,3 @@
+## 2024-05-24 - Egui String Formatting Loop Overhead
+**Learning:** Using `format!` inside `egui`'s rendering loop (which executes every frame) is a massive performance killer due to continuous string heap allocations. The `format!` macro allocates a new `String` every time it's called. This is especially bad in immediate-mode GUIs where UI code is re-run up to 60 times a second.
+**Action:** When generating dynamic text for immediate-mode GUI loops (like iterating over memory hex bytes or disassembly text), use `std::fmt::Write` with the `write!` macro on pre-allocated strings created via `String::with_capacity()`. This avoids per-iteration allocations and drastically reduces GC pressure / heap churn. Avoid trailing whitespace problems by formatting `\n` natively.
