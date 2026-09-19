@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
-use std::io::{Read, Write};
+use std::io::{Read, Write as IoWrite};
+use std::fmt::Write as FmtWrite;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -258,11 +259,14 @@ impl StealthApp {
                             
                             // 1. Current Address
                             let current_addr = self.last_read_addr + i as u64;
-                            ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
+                            let mut addr_str = String::with_capacity(12);
+                            write!(addr_str, "0x{:010X}", current_addr).unwrap();
+                            ui.label(egui::RichText::new(addr_str).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            // PERFORMANCE BOLT: Pre-allocate string to avoid O(N) heap allocations per-frame inside this UI rendering loop
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { write!(hex_str, "{:02X} ", b).unwrap(); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
