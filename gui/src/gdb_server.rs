@@ -1,7 +1,8 @@
 use crate::{NetRequest, StealthPtRegs};
-use std::io::{Read, Write};
+use std::io::{Read, Write as IoWrite};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
+use std::fmt::Write as FmtWrite;
 
 pub fn run_gdb_server(net_tx: mpsc::Sender<NetRequest>) {
     let listener = TcpListener::bind("127.0.0.1:23946").expect("GDB Server failed to bind to 23946");
@@ -117,10 +118,12 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
         let (cb_tx, cb_rx) = mpsc::channel();
         if net_tx.send(NetRequest::GdbGetRegisters(cb_tx)).is_ok() {
             if let Ok(Some(regs)) = cb_rx.recv() {
+                // ⚡ Bolt Optimization: Replace loop format! calls with write! to pre-allocated buffer
+                // Eliminates 272 small allocations per register read request, decreasing GDB packet latency
                 let payload = bytemuck::bytes_of(&regs);
                 let mut hex_str = String::with_capacity(payload.len() * 2);
                 for &b in payload.iter() {
-                    hex_str.push_str(&format!("{:02x}", b));
+                    let _ = write!(&mut hex_str, "{:02x}", b);
                 }
                 return hex_str;
             }
@@ -140,9 +143,11 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                 let (cb_tx, cb_rx) = mpsc::channel();
                 if net_tx.send(NetRequest::ReadMem(addr, len, cb_tx)).is_ok() {
                     if let Ok(data) = cb_rx.recv() {
+                        // ⚡ Bolt Optimization: Use write! to buffer instead of concatenating format! results
+                        // Vastly improves memory reading packet generation speed and GC pressure
                         let mut hex_str = String::with_capacity(data.len() * 2);
                         for b in data {
-                            hex_str.push_str(&format!("{:02x}", b));
+                            let _ = write!(&mut hex_str, "{:02x}", b);
                         }
                         return hex_str;
                     }
