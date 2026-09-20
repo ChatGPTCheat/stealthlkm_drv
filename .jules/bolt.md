@@ -1,0 +1,3 @@
+## 2024-05-15 - Hot Loop Optimizations in egui Immediate Mode
+**Learning:** In egui immediate-mode GUI, rendering loops (e.g., memory hex view rendering) run constantly. Using `format!` inside these hot loops creates massive overhead due to continuous heap allocations. Using `std::fmt::Write` with pre-allocated `String::with_capacity` is a critical performance pattern here. Also, button click handlers are "cold paths" and should not be micro-optimized, even if they use `format!`.
+**Action:** Always identify if a function is called per-frame (hot) or on user interaction (cold) in egui before optimizing string allocations.
