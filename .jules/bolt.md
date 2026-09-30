@@ -1,0 +1,3 @@
+## 2024-10-01 - Avoid format! in eframe hot loops
+**Learning:** `format!` macros perform heap allocations and formatting parsing on every invocation. When used within UI rendering loops like `eframe::egui`'s `update` function or tight inner loops, they introduce significant GC/allocation pressure, drastically slowing down framerates and rendering performance.
+**Action:** Use `std::fmt::Write` with `write!` macro on pre-allocated strings (e.g. `String::with_capacity()`) or use inline formatting (`ui.label(format!(...))` can often be improved, but specifically building up a string with `format!` in a loop is a key target).
