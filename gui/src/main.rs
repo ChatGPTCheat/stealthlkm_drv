@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::fmt::Write as _;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -226,9 +227,9 @@ impl StealthApp {
                     if ui.button("📋 Copy All (Hex)").clicked() {
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            let _ = write!(&mut dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(&mut dump, "{:02X} ", b);
                             }
                             dump.push('\n');
                         }
@@ -258,11 +259,13 @@ impl StealthApp {
                             
                             // 1. Current Address
                             let current_addr = self.last_read_addr + i as u64;
-                            ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
+                            let mut addr_str = String::with_capacity(14);
+                            let _ = write!(&mut addr_str, "0x{:010X}", current_addr);
+                            ui.label(egui::RichText::new(addr_str).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(24);
+                            for b in chunk { let _ = write!(&mut hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -277,11 +280,15 @@ impl StealthApp {
 
                                     ui.horizontal(|ui| {
                                         // Standard Integer
-                                        ui.label(egui::RichText::new(format!("u64: {}", val)).color(egui::Color32::DARK_GRAY));
+                                        let mut u64_str = String::with_capacity(24);
+                                        let _ = write!(&mut u64_str, "u64: {}", val);
+                                        ui.label(egui::RichText::new(u64_str).color(egui::Color32::DARK_GRAY));
                                         
                                         // Float Check (filter out NaNs/Infinities if possible, or just print)
                                         if f32_val.is_finite() && f32_val.abs() >= 0.0001 && f32_val.abs() < 1000000.0 {
-                                            ui.label(egui::RichText::new(format!(" | f32: {:.4}", f32_val)).color(egui::Color32::LIGHT_BLUE));
+                                            let mut f32_str = String::with_capacity(24);
+                                            let _ = write!(&mut f32_str, " | f32: {:.4}", f32_val);
+                                            ui.label(egui::RichText::new(f32_str).color(egui::Color32::LIGHT_BLUE));
                                         } else if val == 0 {
                                             ui.label(egui::RichText::new(" | f32: 0.0").color(egui::Color32::DARK_GRAY));
                                         }
@@ -289,7 +296,9 @@ impl StealthApp {
                                         // Pointer Action: Allow clicking on almost anything > 1MB just in case it's a `.text` allocation or heap
                                         if val > 0x100000 && val < 0x0000FFFFFFFFFFFF {
                                             ui.add_space(5.0);
-                                            let link_resp = ui.link(egui::RichText::new(format!("⮞ 0x{:X}", val)).color(egui::Color32::from_rgb(255, 215, 0)));
+                                            let mut link_str = String::with_capacity(24);
+                                            let _ = write!(&mut link_str, "⮞ 0x{:X}", val);
+                                            let link_resp = ui.link(egui::RichText::new(link_str).color(egui::Color32::from_rgb(255, 215, 0)));
                                             
                                             // Handle interaction
                                             if link_resp.clicked() {
@@ -370,14 +379,23 @@ impl StealthApp {
                 ui.heading(egui::RichText::new("🚨 THREAD FROZEN IN KERNEL SPACE 🚨").color(egui::Color32::RED));
                 
                 egui::Grid::new("regs_grid").num_columns(4).spacing([15.0, 5.0]).show(ui, |ui| {
-                    ui.label(egui::RichText::new(format!("PC: 0x{:X}", regs.pc)).strong().color(egui::Color32::YELLOW));
-                    ui.label(format!("SP: 0x{:X}", regs.sp));
-                    ui.label(format!("X30 (LR): 0x{:X}", regs.regs[30]));
+                    let mut pc_str = String::with_capacity(32);
+                    let _ = write!(&mut pc_str, "PC: 0x{:X}", regs.pc);
+                    ui.label(egui::RichText::new(pc_str).strong().color(egui::Color32::YELLOW));
+
+                    let mut sp_str = String::with_capacity(32);
+                    let _ = write!(&mut sp_str, "SP: 0x{:X}", regs.sp);
+                    ui.label(sp_str);
+
+                    let mut lr_str = String::with_capacity(32);
+                    let _ = write!(&mut lr_str, "X30 (LR): 0x{:X}", regs.regs[30]);
+                    ui.label(lr_str);
                     ui.end_row();
                 });
 
                 ui.separator();
-                let mut x0_hex = format!("{:x}", regs.regs[0]);
+                let mut x0_hex = String::with_capacity(16);
+                let _ = write!(&mut x0_hex, "{:x}", regs.regs[0]);
                 ui.horizontal(|ui| {
                     ui.label("Edit X0 (HEX) Register:");
                     if ui.text_edit_singleline(&mut x0_hex).changed() {
@@ -461,12 +479,12 @@ fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
-                let mut out = String::new();
+                let mut out = String::with_capacity(insns.len() * 32);
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(&mut out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
