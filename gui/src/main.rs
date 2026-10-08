@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
 use capstone::prelude::*;
+use std::fmt::Write as _;
 pub mod gdb_server;
 
 const CMD_GET_BASE: u32 = 1;
@@ -73,6 +74,7 @@ struct StealthApp {
     frozen_regs: Option<StealthPtRegs>,
     
     status_msg: String,
+    cs: Option<Capstone>,
 }
 
 impl StealthApp {
@@ -112,6 +114,12 @@ impl StealthApp {
             hwbp_active: false,
             frozen_regs: None,
             status_msg: "GUI is ready.".to_string(),
+            cs: Capstone::new()
+                .arm64()
+                .mode(arch::arm64::ArchMode::Arm)
+                .detail(false)
+                .build()
+                .ok(),
         }
     }
     
@@ -127,7 +135,11 @@ impl StealthApp {
                     self.status_msg = format!("Read {} bytes from 0x{:x}", data.len(), addr);
                     self.last_read_addr = addr;
                     self.raw_memory = data.clone();
-                    self.disasm_text = disassemble_arm64(&data, addr);
+                    self.disasm_text = if let Some(cs) = &self.cs {
+                        disassemble_arm64(cs, &data, addr)
+                    } else {
+                        "Capstone initialization failed".to_string()
+                    };
                 }
                 UiNotify::HwbpSetResult(success) => {
                     self.hwbp_active = success;
@@ -261,8 +273,10 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk {
+                                let _ = write!(hex_str, "{:02X} ", b);
+                            }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -448,33 +462,22 @@ impl eframe::App for StealthApp {
     }
 }
 
-fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
-    let cs = Capstone::new()
-        .arm64()
-        .mode(arch::arm64::ArchMode::Arm)
-        .detail(false)
-        .build();
-
-    match cs {
-        Ok(capstone) => {
+fn disassemble_arm64(capstone: &Capstone, data: &[u8], base_addr: u64) -> String {
             if let Ok(insns) = capstone.disasm_all(data, base_addr) {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
-                let mut out = String::new();
+                let mut out = String::with_capacity(insns.len() * 32);
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
                 "Failed to disassemble".to_string()
             }
-        }
-        Err(_) => "Capstone initialization failed".to_string()
-    }
 }
 
 // ----------------- NETWORK LAYER -----------------
