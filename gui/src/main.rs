@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
 use capstone::prelude::*;
+use std::fmt::Write as _;
 pub mod gdb_server;
 
 const CMD_GET_BASE: u32 = 1;
@@ -261,8 +262,8 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(&mut hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
