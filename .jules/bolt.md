@@ -1,0 +1,3 @@
+## 2024-05-14 - Immediate-Mode GUI String Allocation Overhead
+**Learning:** In eframe/egui immediate-mode UIs, the entire UI is redrawn continuously. Using macros like `format!` inside loops (like generating a hex dump grid) causes massive, continuous string heap allocations per-iteration on the hot path, degrading rendering performance. Button click handlers, conversely, are cold paths where such allocations don't impact continuous rendering.
+**Action:** Use `std::fmt::Write` (`write!`) with pre-allocated strings (`String::with_capacity`) inside hot rendering loops. Leave cold paths (like `clicked()` handlers) untouched to maintain readability. When doing so, alias `std::fmt::Write` to avoid trait conflicts with `std::io::Write`.
