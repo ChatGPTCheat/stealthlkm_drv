@@ -54,6 +54,8 @@ struct StealthApp {
     net_tx: mpsc::Sender<NetRequest>,
     ui_rx: mpsc::Receiver<UiNotify>,
     
+    capstone: Capstone,
+
     // UI States
     target_module: String,
     base_address: u64,
@@ -93,10 +95,20 @@ impl StealthApp {
             crate::gdb_server::run_gdb_server(gdb_net_tx);
         });
 
+        // PERFORMANCE OPTIMIZATION: Cache the Capstone engine instance on startup
+        // because re-initializing it on every disassembly call is computationally expensive.
+        let capstone = Capstone::new()
+            .arm64()
+            .mode(arch::arm64::ArchMode::Arm)
+            .detail(false)
+            .build()
+            .expect("Failed to initialize Capstone");
+
         Self {
             tx: ui_tx_clone,
             net_tx: net_tx_clone,
             ui_rx,
+            capstone,
             target_module: "libUE4.so".to_string(),
             base_address: 0,
             
@@ -115,6 +127,30 @@ impl StealthApp {
         }
     }
     
+    fn disassemble_arm64(&self, data: &[u8], base_addr: u64) -> String {
+        if let Ok(insns) = self.capstone.disasm_all(data, base_addr) {
+            if insns.is_empty() {
+                return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
+            }
+            // PERFORMANCE OPTIMIZATION: Use pre-allocated string and `write!` macro
+            // to avoid continuous per-iteration string heap allocations caused by `format!`.
+            use std::fmt::Write as _;
+            let mut out = String::with_capacity(insns.len() * 32);
+            for ins in insns.as_ref() {
+                let _ = write!(
+                    &mut out,
+                    "0x{:X}: {} {}\n",
+                    ins.address(),
+                    ins.mnemonic().unwrap_or(""),
+                    ins.op_str().unwrap_or("")
+                );
+            }
+            out
+        } else {
+            "Failed to disassemble".to_string()
+        }
+    }
+
     fn process_net_events(&mut self) {
         while let Ok(msg) = self.ui_rx.try_recv() {
             match msg {
@@ -127,7 +163,7 @@ impl StealthApp {
                     self.status_msg = format!("Read {} bytes from 0x{:x}", data.len(), addr);
                     self.last_read_addr = addr;
                     self.raw_memory = data.clone();
-                    self.disasm_text = disassemble_arm64(&data, addr);
+                    self.disasm_text = self.disassemble_arm64(&data, addr);
                 }
                 UiNotify::HwbpSetResult(success) => {
                     self.hwbp_active = success;
@@ -224,6 +260,8 @@ impl StealthApp {
                 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("📋 Copy All (Hex)").clicked() {
+                        // PERFORMANCE OPTIMIZATION: Pre-allocate string and use `write!` to avoid
+                        // continuous per-iteration allocations when copying large memory dumps.
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
                             dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
@@ -448,34 +486,7 @@ impl eframe::App for StealthApp {
     }
 }
 
-fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
-    let cs = Capstone::new()
-        .arm64()
-        .mode(arch::arm64::ArchMode::Arm)
-        .detail(false)
-        .build();
 
-    match cs {
-        Ok(capstone) => {
-            if let Ok(insns) = capstone.disasm_all(data, base_addr) {
-                if insns.is_empty() {
-                    return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
-                }
-                let mut out = String::new();
-                for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
-                        ins.address(), 
-                        ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
-                }
-                out
-            } else {
-                "Failed to disassemble".to_string()
-            }
-        }
-        Err(_) => "Capstone initialization failed".to_string()
-    }
-}
 
 // ----------------- NETWORK LAYER -----------------
 
