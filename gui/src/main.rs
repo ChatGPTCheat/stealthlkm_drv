@@ -53,6 +53,7 @@ struct StealthApp {
     tx: mpsc::Sender<UiNotify>,
     net_tx: mpsc::Sender<NetRequest>,
     ui_rx: mpsc::Receiver<UiNotify>,
+    cs: Option<Capstone>,
     
     // UI States
     target_module: String,
@@ -93,10 +94,18 @@ impl StealthApp {
             crate::gdb_server::run_gdb_server(gdb_net_tx);
         });
 
+        let cs = Capstone::new()
+            .arm64()
+            .mode(arch::arm64::ArchMode::Arm)
+            .detail(false)
+            .build()
+            .ok();
+
         Self {
             tx: ui_tx_clone,
             net_tx: net_tx_clone,
             ui_rx,
+            cs,
             target_module: "libUE4.so".to_string(),
             base_address: 0,
             
@@ -127,7 +136,28 @@ impl StealthApp {
                     self.status_msg = format!("Read {} bytes from 0x{:x}", data.len(), addr);
                     self.last_read_addr = addr;
                     self.raw_memory = data.clone();
-                    self.disasm_text = disassemble_arm64(&data, addr);
+                    self.disasm_text = match &self.cs {
+                        Some(cs) => {
+                            if let Ok(insns) = cs.disasm_all(&data, addr) {
+                                if insns.is_empty() {
+                                    "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string()
+                                } else {
+                                    use std::fmt::Write;
+                                    let mut out = String::with_capacity(insns.len() * 40);
+                                    for ins in insns.as_ref() {
+                                        let _ = writeln!(&mut out, "0x{:X}: {} {}",
+                                            ins.address(),
+                                            ins.mnemonic().unwrap_or(""),
+                                            ins.op_str().unwrap_or(""));
+                                    }
+                                    out
+                                }
+                            } else {
+                                "Failed to disassemble".to_string()
+                            }
+                        }
+                        None => "Capstone initialization failed".to_string(),
+                    };
                 }
                 UiNotify::HwbpSetResult(success) => {
                     self.hwbp_active = success;
@@ -179,8 +209,8 @@ impl StealthApp {
         ui.group(|ui| {
             ui.heading("🔭 Memory Inspector");
             ui.horizontal(|ui| {
-                if !self.history_stack.is_empty() {
-                    if ui.button("⬅ Back").clicked() {
+                if !self.history_stack.is_empty()
+                    && ui.button("⬅ Back").clicked() {
                         let prev_addr = self.history_stack.pop().unwrap();
                         self.read_addr_str = format!("0x{:x}", prev_addr);
                         let size = self.read_size_str.parse::<u32>().unwrap_or(128);
@@ -193,7 +223,6 @@ impl StealthApp {
                             }
                         });
                     }
-                }
 
                 ui.label("Address (HEX):");
                 ui.text_edit_singleline(&mut self.read_addr_str);
@@ -354,7 +383,7 @@ impl StealthApp {
                     if self.hwbp_active {
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::RemoveHwbp(cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
                         });
                     } else if let Ok(addr) = u64::from_str_radix(self.hwbp_addr_str.trim_start_matches("0x"), 16) {
                         std::thread::spawn(move || { 
@@ -394,7 +423,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Bypass (Early Return)").on_hover_text("Sets PC = X30 (Link Register) to exit function immediately.").clicked() {
@@ -404,7 +433,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Skip Instruction (PC += 4)").clicked() {
@@ -414,7 +443,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                 });
@@ -448,34 +477,6 @@ impl eframe::App for StealthApp {
     }
 }
 
-fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
-    let cs = Capstone::new()
-        .arm64()
-        .mode(arch::arm64::ArchMode::Arm)
-        .detail(false)
-        .build();
-
-    match cs {
-        Ok(capstone) => {
-            if let Ok(insns) = capstone.disasm_all(data, base_addr) {
-                if insns.is_empty() {
-                    return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
-                }
-                let mut out = String::new();
-                for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
-                        ins.address(), 
-                        ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
-                }
-                out
-            } else {
-                "Failed to disassemble".to_string()
-            }
-        }
-        Err(_) => "Capstone initialization failed".to_string()
-    }
-}
 
 // ----------------- NETWORK LAYER -----------------
 
@@ -515,8 +516,14 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
     let mut last_frozen_regs: Option<StealthPtRegs> = None;
 
     loop {
-        // Actor requests
-        while let Ok(msg) = rx.try_recv() {
+        let timeout = if hwbp_active {
+            std::time::Duration::from_millis(500).saturating_sub(last_poll.elapsed())
+        } else {
+            std::time::Duration::from_secs(365 * 24 * 3600)
+        };
+
+        let mut msg_opt = rx.recv_timeout(timeout).ok();
+        while let Some(msg) = msg_opt {
             match msg {
                 NetRequest::GetBase(name, cb) => {
                     let req = NetCommand { cmd_type: CMD_GET_BASE, address: 0, size: name.len() as u32 };
@@ -556,21 +563,21 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
                 NetRequest::ResumeHwbp(regs, cb) => {
                     let payload = bytemuck::bytes_of(&regs);
                     let req = NetCommand { cmd_type: CMD_RESUME_HWBP, address: 0, size: payload.len() as u32 };
-                    if net_send(&mut stream, &req, payload).is_ok() {
-                        if net_recv(&mut stream).is_ok() {
+                    if net_send(&mut stream, &req, payload).is_ok()
+                        && net_recv(&mut stream).is_ok() {
                             last_frozen_regs = None;
                             let _ = cb.send(());
                         }
-                    }
                 }
                 NetRequest::GdbGetRegisters(cb) => {
                     let _ = cb.send(last_frozen_regs);
                 }
             }
+            msg_opt = rx.try_recv().ok();
         }
 
         // Background HWBP Polling
-        if hwbp_active && last_poll.elapsed() >= Duration::from_millis(500) {
+        if hwbp_active && last_poll.elapsed() >= std::time::Duration::from_millis(500) {
             let req = NetCommand { cmd_type: CMD_CHECK_DEBUG_EVENT, address: 0, size: 0 };
             if net_send(&mut stream, &req, &[]).is_ok() {
                 if let Ok((res, data)) = net_recv(&mut stream) {
@@ -583,7 +590,6 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
             }
             last_poll = Instant::now();
         }
-        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
