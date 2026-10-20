@@ -1,0 +1,3 @@
+## 2024-05-14 - Capstone Initialization Bottleneck in Rust GUI
+**Learning:** The `Capstone` disassembly engine is computationally expensive to initialize in Rust. Recreating it on every memory read causes a significant performance bottleneck and jank in the eframe GUI thread. While `Capstone` doesn't implement the `Send` trait (making it hard to pass between threads), it is safe to cache it directly inside the `StealthApp` struct because `eframe::App` instances run entirely on the main UI thread.
+**Action:** Always cache expensive initialization objects like `Capstone` in the application state rather than recreating them per-call, and remember that `eframe` main state is single-threaded, bypassing `Send` trait limitations.
