@@ -1,0 +1,3 @@
+## 2025-02-12 - Immediate-Mode UI String Allocation Bottleneck
+**Learning:** In eframe/egui immediate-mode UI components, building strings iteratively with `format!` inside render loops (like generating hex dumps byte-by-byte) is a major performance bottleneck. Since the render loop executes continuously, per-byte temporary string heap allocations cause massive overhead and memory churn.
+**Action:** Use `std::fmt::Write` with the `write!` macro on strings pre-allocated via `String::with_capacity()` for dynamic multi-element strings inside UI rendering hot paths. Import `std::fmt::Write as _` to avoid collisions with `std::io::Write`.
