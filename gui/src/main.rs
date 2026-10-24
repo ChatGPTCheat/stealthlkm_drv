@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::fmt::Write as _;
 use std::net::TcpStream;
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -226,9 +227,9 @@ impl StealthApp {
                     if ui.button("📋 Copy All (Hex)").clicked() {
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            let _ = write!(&mut dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(&mut dump, "{:02X} ", b);
                             }
                             dump.push('\n');
                         }
@@ -262,7 +263,7 @@ impl StealthApp {
                             
                             // 2. Hex String
                             let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            for b in chunk { let _ = write!(&mut hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
