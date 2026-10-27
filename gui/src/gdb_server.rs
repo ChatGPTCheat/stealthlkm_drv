@@ -1,5 +1,6 @@
-use crate::{NetRequest, StealthPtRegs};
+use crate::NetRequest;
 use std::io::{Read, Write};
+use std::fmt::Write as _;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 
@@ -7,13 +8,11 @@ pub fn run_gdb_server(net_tx: mpsc::Sender<NetRequest>) {
     let listener = TcpListener::bind("127.0.0.1:23946").expect("GDB Server failed to bind to 23946");
     println!("[GDB] Server listening on 127.0.0.1:23946 for IDA Pro...");
 
-    for stream in listener.incoming() {
-        if let Ok(mut stream) = stream {
-            println!("[GDB] Client connected!");
-            let tx = net_tx.clone();
-            handle_client(&mut stream, tx);
-            println!("[GDB] Client disconnected.");
-        }
+    for mut stream in listener.incoming().flatten() {
+        println!("[GDB] Client connected!");
+        let tx = net_tx.clone();
+        handle_client(&mut stream, tx);
+        println!("[GDB] Client disconnected.");
     }
 }
 
@@ -120,7 +119,7 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                 let payload = bytemuck::bytes_of(&regs);
                 let mut hex_str = String::with_capacity(payload.len() * 2);
                 for &b in payload.iter() {
-                    hex_str.push_str(&format!("{:02x}", b));
+                    let _ = write!(hex_str, "{:02x}", b);
                 }
                 return hex_str;
             }
@@ -142,7 +141,7 @@ fn process_gdb_command(cmd: &str, net_tx: &mpsc::Sender<NetRequest>) -> String {
                     if let Ok(data) = cb_rx.recv() {
                         let mut hex_str = String::with_capacity(data.len() * 2);
                         for b in data {
-                            hex_str.push_str(&format!("{:02x}", b));
+                            let _ = write!(hex_str, "{:02x}", b);
                         }
                         return hex_str;
                     }

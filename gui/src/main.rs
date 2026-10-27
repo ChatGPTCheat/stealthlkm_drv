@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::fmt::Write as _;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -179,8 +180,8 @@ impl StealthApp {
         ui.group(|ui| {
             ui.heading("🔭 Memory Inspector");
             ui.horizontal(|ui| {
-                if !self.history_stack.is_empty() {
-                    if ui.button("⬅ Back").clicked() {
+                if !self.history_stack.is_empty()
+                    && ui.button("⬅ Back").clicked() {
                         let prev_addr = self.history_stack.pop().unwrap();
                         self.read_addr_str = format!("0x{:x}", prev_addr);
                         let size = self.read_size_str.parse::<u32>().unwrap_or(128);
@@ -193,7 +194,6 @@ impl StealthApp {
                             }
                         });
                     }
-                }
 
                 ui.label("Address (HEX):");
                 ui.text_edit_singleline(&mut self.read_addr_str);
@@ -261,8 +261,8 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -354,7 +354,7 @@ impl StealthApp {
                     if self.hwbp_active {
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::RemoveHwbp(cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
                         });
                     } else if let Ok(addr) = u64::from_str_radix(self.hwbp_addr_str.trim_start_matches("0x"), 16) {
                         std::thread::spawn(move || { 
@@ -394,7 +394,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Bypass (Early Return)").on_hover_text("Sets PC = X30 (Link Register) to exit function immediately.").clicked() {
@@ -404,7 +404,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Skip Instruction (PC += 4)").clicked() {
@@ -414,7 +414,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                 });
@@ -461,12 +461,12 @@ fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
-                let mut out = String::new();
+                let mut out = String::with_capacity(insns.as_ref().len() * 32);
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
@@ -556,12 +556,11 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
                 NetRequest::ResumeHwbp(regs, cb) => {
                     let payload = bytemuck::bytes_of(&regs);
                     let req = NetCommand { cmd_type: CMD_RESUME_HWBP, address: 0, size: payload.len() as u32 };
-                    if net_send(&mut stream, &req, payload).is_ok() {
-                        if net_recv(&mut stream).is_ok() {
+                    if net_send(&mut stream, &req, payload).is_ok()
+                        && net_recv(&mut stream).is_ok() {
                             last_frozen_regs = None;
                             let _ = cb.send(());
                         }
-                    }
                 }
                 NetRequest::GdbGetRegisters(cb) => {
                     let _ = cb.send(last_frozen_regs);
