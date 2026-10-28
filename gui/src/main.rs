@@ -224,11 +224,12 @@ impl StealthApp {
                 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("📋 Copy All (Hex)").clicked() {
+                        use std::fmt::Write as _;
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            let _ = write!(&mut dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(&mut dump, "{:02X} ", b);
                             }
                             dump.push('\n');
                         }
@@ -261,8 +262,9 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            use std::fmt::Write as _;
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(&mut hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -515,8 +517,25 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
     let mut last_frozen_regs: Option<StealthPtRegs> = None;
 
     loop {
-        // Actor requests
-        while let Ok(msg) = rx.try_recv() {
+        // Wait for next message or HWBP poll interval
+        let timeout = if hwbp_active {
+            Duration::from_millis(500).saturating_sub(last_poll.elapsed())
+        } else {
+            Duration::from_secs(365 * 24 * 3600)
+        };
+
+        let msg = match rx.recv_timeout(timeout) {
+            Ok(m) => Some(m),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(_) => break, // Channel closed
+        };
+
+        // Drain any pending messages and process them
+        let mut msgs = Vec::new();
+        if let Some(m) = msg { msgs.push(m); }
+        while let Ok(m) = rx.try_recv() { msgs.push(m); }
+
+        for msg in msgs {
             match msg {
                 NetRequest::GetBase(name, cb) => {
                     let req = NetCommand { cmd_type: CMD_GET_BASE, address: 0, size: name.len() as u32 };
@@ -583,7 +602,6 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
             }
             last_poll = Instant::now();
         }
-        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
