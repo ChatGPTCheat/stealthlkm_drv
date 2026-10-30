@@ -1,0 +1,3 @@
+## 2024-10-30 - Egui String Allocation Patterns
+**Learning:** In the egui immediate-mode UI render loop, building multi-element strings (like hex dumps) using `format!` inside a loop causes severe per-iteration heap allocation overhead. However, pre-allocating a single buffer and reusing it across UI elements for single-line labels does not yield benefits, because egui requires an owned `String` and will clone it anyway.
+**Action:** Always use `write!` with `String::with_capacity` for constructing multi-element strings in the UI loop, but continue using `format!` for single-line UI labels without attempting premature buffer-reuse optimizations.
