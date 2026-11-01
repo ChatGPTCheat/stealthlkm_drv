@@ -1,4 +1,4 @@
-use crate::{NetRequest, StealthPtRegs};
+use crate::NetRequest;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
@@ -7,13 +7,11 @@ pub fn run_gdb_server(net_tx: mpsc::Sender<NetRequest>) {
     let listener = TcpListener::bind("127.0.0.1:23946").expect("GDB Server failed to bind to 23946");
     println!("[GDB] Server listening on 127.0.0.1:23946 for IDA Pro...");
 
-    for stream in listener.incoming() {
-        if let Ok(mut stream) = stream {
-            println!("[GDB] Client connected!");
-            let tx = net_tx.clone();
-            handle_client(&mut stream, tx);
-            println!("[GDB] Client disconnected.");
-        }
+    for mut stream in listener.incoming().flatten() {
+        println!("[GDB] Client connected!");
+        let tx = net_tx.clone();
+        handle_client(&mut stream, tx);
+        println!("[GDB] Client disconnected.");
     }
 }
 

@@ -1,0 +1,3 @@
+## 2024-05-18 - Immediate-Mode GUI String Allocation Overhead
+**Learning:** In immediate-mode GUI frameworks like `egui` (used in this codebase), UI rendering loops execute continuously (often 60+ times per second). Using `format!` inside these loops for multi-element strings (like hex dumps) creates a massive performance bottleneck due to continuous per-iteration string heap allocations.
+**Action:** Always use `std::fmt::Write` and `write!` on pre-allocated strings (`String::with_capacity`) instead of `format!` when building strings in `egui` hot paths. For single-line labels, `format!` is acceptable as `egui` forces a clone anyway.
