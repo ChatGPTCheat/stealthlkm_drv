@@ -1,0 +1,3 @@
+## 2023-11-06 - [Performance Optimization] Caching Capstone instance and avoiding string heap allocations in hot loops
+**Learning:** Initializing Capstone AArch64 within a UI loop or repeatedly during frequent disassemblies incurs unnecessary overhead. Also, using `format!` inside `for` loops (e.g., `hex_str.push_str(&format!(...))`) to append to strings is a highly inefficient pattern in Rust GUI apps due to excessive heap allocations.
+**Action:** Always pre-initialize expensive objects like Capstone within the application's global state struct (`StealthApp`). Use `std::fmt::Write` trait's `write!` macro with pre-allocated strings (`String::with_capacity(...)`) for string building inside loops.
