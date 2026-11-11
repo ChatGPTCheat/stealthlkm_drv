@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::fmt::Write as FmtWrite;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use bytemuck::{Pod, Zeroable};
@@ -54,6 +55,9 @@ struct StealthApp {
     net_tx: mpsc::Sender<NetRequest>,
     ui_rx: mpsc::Receiver<UiNotify>,
     
+    // Disassembler Engine
+    capstone: Option<Capstone>,
+
     // UI States
     target_module: String,
     base_address: u64,
@@ -82,6 +86,13 @@ impl StealthApp {
         
         let net_tx_clone = net_tx.clone();
         let ui_tx_clone = ui_tx.clone();
+
+        let cs = Capstone::new()
+            .arm64()
+            .mode(arch::arm64::ArchMode::Arm)
+            .detail(false)
+            .build()
+            .ok();
         
         std::thread::spawn(move || {
             network_worker(net_rx, ui_tx);
@@ -97,6 +108,7 @@ impl StealthApp {
             tx: ui_tx_clone,
             net_tx: net_tx_clone,
             ui_rx,
+            capstone: cs,
             target_module: "libUE4.so".to_string(),
             base_address: 0,
             
@@ -127,7 +139,7 @@ impl StealthApp {
                     self.status_msg = format!("Read {} bytes from 0x{:x}", data.len(), addr);
                     self.last_read_addr = addr;
                     self.raw_memory = data.clone();
-                    self.disasm_text = disassemble_arm64(&data, addr);
+                    self.disasm_text = self.disassemble_arm64(&data, addr);
                 }
                 UiNotify::HwbpSetResult(success) => {
                     self.hwbp_active = success;
@@ -179,8 +191,8 @@ impl StealthApp {
         ui.group(|ui| {
             ui.heading("🔭 Memory Inspector");
             ui.horizontal(|ui| {
-                if !self.history_stack.is_empty() {
-                    if ui.button("⬅ Back").clicked() {
+                if !self.history_stack.is_empty()
+                    && ui.button("⬅ Back").clicked() {
                         let prev_addr = self.history_stack.pop().unwrap();
                         self.read_addr_str = format!("0x{:x}", prev_addr);
                         let size = self.read_size_str.parse::<u32>().unwrap_or(128);
@@ -193,7 +205,6 @@ impl StealthApp {
                             }
                         });
                     }
-                }
 
                 ui.label("Address (HEX):");
                 ui.text_edit_singleline(&mut self.read_addr_str);
@@ -226,11 +237,11 @@ impl StealthApp {
                     if ui.button("📋 Copy All (Hex)").clicked() {
                         let mut dump = String::with_capacity(self.raw_memory.len() * 4 + 100);
                         for (i, chunk) in self.raw_memory.chunks(8).enumerate() {
-                            dump.push_str(&format!("0x{:010X} | ", self.last_read_addr + (i * 8) as u64));
+                            let _ = write!(&mut dump, "0x{:010X} | ", self.last_read_addr + (i * 8) as u64);
                             for b in chunk {
-                                dump.push_str(&format!("{:02X} ", b));
+                                let _ = write!(&mut dump, "{:02X} ", b);
                             }
-                            dump.push('\n');
+                            let _ = writeln!(&mut dump);
                         }
                         ui.output_mut(|o| o.copied_text = dump);
                     }
@@ -261,8 +272,8 @@ impl StealthApp {
                             ui.label(egui::RichText::new(format!("0x{:010X}", current_addr)).color(egui::Color32::GRAY));
                             
                             // 2. Hex String
-                            let mut hex_str = String::new();
-                            for b in chunk { hex_str.push_str(&format!("{:02X} ", b)); }
+                            let mut hex_str = String::with_capacity(chunk.len() * 3);
+                            for b in chunk { let _ = write!(&mut hex_str, "{:02X} ", b); }
                             ui.label(egui::RichText::new(hex_str).monospace().color(egui::Color32::from_rgb(200, 200, 255)));
                                                 // 3. Multi-format Decoder (u64, f32, Ptr)
                                 if chunk.len() == 8 {
@@ -354,7 +365,7 @@ impl StealthApp {
                     if self.hwbp_active {
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::RemoveHwbp(cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpSetResult(false)); }
                         });
                     } else if let Ok(addr) = u64::from_str_radix(self.hwbp_addr_str.trim_start_matches("0x"), 16) {
                         std::thread::spawn(move || { 
@@ -394,7 +405,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Bypass (Early Return)").on_hover_text("Sets PC = X30 (Link Register) to exit function immediately.").clicked() {
@@ -404,7 +415,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                     if ui.button("⏭ Skip Instruction (PC += 4)").clicked() {
@@ -414,7 +425,7 @@ impl StealthApp {
                         let notify = self.tx.clone();
                         std::thread::spawn(move || { 
                             let (cb, rx) = mpsc::channel(); let _ = tx.send(NetRequest::ResumeHwbp(regs, cb));
-                            if let Ok(_) = rx.recv() { let _ = notify.send(UiNotify::HwbpResumed); }
+                            if rx.recv().is_ok() { let _ = notify.send(UiNotify::HwbpResumed); }
                         });
                     }
                 });
@@ -448,32 +459,27 @@ impl eframe::App for StealthApp {
     }
 }
 
-fn disassemble_arm64(data: &[u8], base_addr: u64) -> String {
-    let cs = Capstone::new()
-        .arm64()
-        .mode(arch::arm64::ArchMode::Arm)
-        .detail(false)
-        .build();
-
-    match cs {
-        Ok(capstone) => {
-            if let Ok(insns) = capstone.disasm_all(data, base_addr) {
+impl StealthApp {
+    fn disassemble_arm64(&self, data: &[u8], base_addr: u64) -> String {
+        if let Some(cs) = &self.capstone {
+            if let Ok(insns) = cs.disasm_all(data, base_addr) {
                 if insns.is_empty() {
                     return "No valid instructions found.\n(You are likely reading a DATA section or padding, not CODE!)".to_string();
                 }
                 let mut out = String::new();
                 for ins in insns.as_ref() {
-                    out.push_str(&format!("0x{:X}: {} {}\n", 
+                    let _ = writeln!(&mut out, "0x{:X}: {} {}",
                         ins.address(), 
                         ins.mnemonic().unwrap_or(""), 
-                        ins.op_str().unwrap_or("")));
+                        ins.op_str().unwrap_or(""));
                 }
                 out
             } else {
                 "Failed to disassemble".to_string()
             }
+        } else {
+            "Capstone initialization failed".to_string()
         }
-        Err(_) => "Capstone initialization failed".to_string()
     }
 }
 
@@ -556,12 +562,11 @@ pub fn network_worker(rx: mpsc::Receiver<NetRequest>, ui_notify: mpsc::Sender<Ui
                 NetRequest::ResumeHwbp(regs, cb) => {
                     let payload = bytemuck::bytes_of(&regs);
                     let req = NetCommand { cmd_type: CMD_RESUME_HWBP, address: 0, size: payload.len() as u32 };
-                    if net_send(&mut stream, &req, payload).is_ok() {
-                        if net_recv(&mut stream).is_ok() {
+                    if net_send(&mut stream, &req, payload).is_ok()
+                        && net_recv(&mut stream).is_ok() {
                             last_frozen_regs = None;
                             let _ = cb.send(());
                         }
-                    }
                 }
                 NetRequest::GdbGetRegisters(cb) => {
                     let _ = cb.send(last_frozen_regs);
